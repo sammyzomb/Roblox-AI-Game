@@ -1,0 +1,64 @@
+name: AI Dispatcher v1
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to dispatch"
+        required: true
+        type: string
+      agent:
+        description: "Agent key: CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: ai-dispatch-${{ github.repository }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.comment.user.login != 'github-actions[bot]' &&
+        contains(github.event.comment.body, '[DISPATCH:')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch GitHub OIDC token for Anthropic
+        shell: bash
+        run: |
+          curl -sS             -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com"             | jq -r .value > /tmp/gha-jwt
+          test -s /tmp/gha-jwt
+
+      - name: Run dispatcher
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          MANUAL_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          MANUAL_AGENT: ${{ inputs.agent }}
+          ANTHROPIC_IDENTITY_TOKEN_FILE: /tmp/gha-jwt
+          ANTHROPIC_FEDERATION_RULE_ID: fdrl_01AcTwt2NFyUCaGMRxmFrQAG
+          ANTHROPIC_ORGANIZATION_ID: 21c12f48-e933-49ca-b5bb-e6b84f901e5e
+          ANTHROPIC_SERVICE_ACCOUNT_ID: svac_01FtmSsticj8DHNRbayjucWv
+          ANTHROPIC_WORKSPACE_ID: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
+          XAI_MODEL: ${{ vars.XAI_MODEL || 'grok-4.7' }}
+        run: python3 scripts/ai_dispatcher.py
