@@ -1,0 +1,53 @@
+name: AI Dispatcher v1
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to dispatch"
+        required: true
+        type: string
+      agent:
+        description: "Agent key: CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ai-dispatch-${{ github.repository }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.comment.user.login != 'github-actions[bot]' &&
+        contains(github.event.comment.body, '[DISPATCH:')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run dispatcher
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          MANUAL_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          MANUAL_AGENT: ${{ inputs.agent }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
+          XAI_MODEL: ${{ vars.XAI_MODEL || 'grok-4.7' }}
+        run: python3 scripts/ai_dispatcher.py
