@@ -250,6 +250,20 @@ Keep claims grounded in the supplied repository/Issue context.
 """.strip()
 
 
+def _safe_jwt_claims(jwt: str) -> dict[str, Any]:
+    import base64
+    try:
+        parts = jwt.split(".")
+        if len(parts) < 2:
+            return {"decode_error": "not a JWT"}
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode("utf-8"))
+        allowed = ("iss", "sub", "aud", "repository", "repository_owner", "ref", "event_name", "workflow")
+        return {k: data.get(k) for k in allowed if k in data}
+    except Exception as exc:
+        return {"decode_error": str(exc)}
+
+
 def exchange_anthropic_token() -> str:
     token_file = require_env("ANTHROPIC_IDENTITY_TOKEN_FILE")
     with open(token_file, "r", encoding="utf-8") as f:
@@ -257,19 +271,23 @@ def exchange_anthropic_token() -> str:
     if not assertion:
         raise RuntimeError("Anthropic identity token file is empty.")
 
-    data = http_json(
-        ANTHROPIC_TOKEN_URL,
-        method="POST",
-        payload={
-            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "assertion": assertion,
-            "federation_rule_id": require_env("ANTHROPIC_FEDERATION_RULE_ID"),
-            "organization_id": require_env("ANTHROPIC_ORGANIZATION_ID"),
-            "service_account_id": require_env("ANTHROPIC_SERVICE_ACCOUNT_ID"),
-            "workspace_id": require_env("ANTHROPIC_WORKSPACE_ID"),
-        },
-        timeout=90,
-    )
+    try:
+        data = http_json(
+            ANTHROPIC_TOKEN_URL,
+            method="POST",
+            payload={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+                "federation_rule_id": require_env("ANTHROPIC_FEDERATION_RULE_ID"),
+                "organization_id": require_env("ANTHROPIC_ORGANIZATION_ID"),
+                "service_account_id": require_env("ANTHROPIC_SERVICE_ACCOUNT_ID"),
+                "workspace_id": require_env("ANTHROPIC_WORKSPACE_ID"),
+            },
+            timeout=90,
+        )
+    except RuntimeError as exc:
+        claims = _safe_jwt_claims(assertion)
+        raise RuntimeError(f"{exc}; OIDC claims={json.dumps(claims, ensure_ascii=False)}") from exc
     access_token = str(data.get("access_token") or "").strip()
     if not access_token:
         raise RuntimeError("Anthropic WIF exchange returned no access_token.")
