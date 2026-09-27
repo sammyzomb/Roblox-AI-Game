@@ -23,22 +23,34 @@ It cannot:
 - create production-code PRs;
 - claim Roblox Studio testing occurred.
 
-This boundary is deliberate. File mutation and automatic PR creation should be added only after the dispatcher is stable and auditable.
+## Authentication
 
-## Required GitHub Secrets
+Claude uses Anthropic Workload Identity Federation with GitHub Actions OIDC.
 
-Repository → Settings → Secrets and variables → Actions → New repository secret
+No static `ANTHROPIC_API_KEY` is required.
 
-Create:
+The configured Anthropic federation is restricted to:
 
-- `ANTHROPIC_API_KEY`
-- `XAI_API_KEY`
+- repository: `sammyzomb/Roblox-AI-Game`
+- service account: `roblox-github-actions`
+- workspace: `Default`
+
+GitHub Actions must have:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+```
+
+Grok/xAI still requires:
+
+- `XAI_API_KEY` as a GitHub Actions repository secret
 
 Do not put API keys in Issues, source files, workflow YAML, or documentation.
 
 ## Optional repository variables
-
-Repository → Settings → Secrets and variables → Actions → Variables
 
 Optional:
 - `CLAUDE_MODEL` — default: `claude-sonnet-5`
@@ -83,13 +95,11 @@ Post a heartbeat first, then work toward the next milestone.
 If blocked, report the exact dependency.
 ```
 
-GitHub Actions will call the mapped provider and post the model response back to that Issue.
-
 ## Role routing
 
 | Agent marker | Provider | Project role |
 | --- | --- | --- |
-| CLAUDE | Anthropic | Primary Programmer |
+| CLAUDE | Anthropic WIF | Primary Programmer |
 | GROK | xAI | Secondary Developer / Reviewer |
 | GROK-ART-PLANNER | xAI | Art Planner |
 | GROK-ART-SUPERVISOR | xAI | Art Supervisor |
@@ -98,30 +108,38 @@ GitHub Actions will call the mapped provider and post the model response back to
 
 ## Manual test
 
-The workflow can also be started from GitHub Actions using **Run workflow**.
+After this workflow is merged into the default branch, use GitHub Actions → **AI Dispatcher v1** → **Run workflow**.
 
-Inputs:
-- issue number
-- agent key
+Test first with:
+- issue number: `6`
+- agent: `CLAUDE`
 
-This is useful for validating API keys before relying on Issue comment triggers.
+A successful run should:
+1. request a short-lived GitHub OIDC token;
+2. exchange it with Anthropic WIF;
+3. call Claude Sonnet 5;
+4. post Claude's result to Issue #6.
 
 ## Failure behavior
 
-If the provider call fails, the dispatcher posts a `[BLOCKED]` comment to the same Issue with the integration error.
+If the provider call fails, the dispatcher posts a `[BLOCKED]` comment to the same Issue.
 
-Common causes:
-- missing GitHub Secret;
-- provider account has no credit/billing;
-- invalid/expired API key;
+Common Claude causes:
+- Anthropic account has no API credits/billing;
+- federation rule or repository claim mismatch;
 - selected model unavailable to the account;
+- provider outage or rate limit.
+
+Common xAI causes:
+- missing/invalid `XAI_API_KEY`;
+- no xAI API credit/billing;
 - provider outage or rate limit.
 
 ## Cost control
 
 The dispatcher triggers only when a comment contains an explicit `[DISPATCH:...]` marker.
 
-Ordinary Issue comments and normal `[STATUS]` updates do not call an AI API. This prevents loops and accidental token spend.
+Ordinary Issue comments and normal `[STATUS]` updates do not call an AI API.
 
 ## Next phase
 
