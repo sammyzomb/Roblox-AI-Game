@@ -11,7 +11,7 @@ Purpose:
 Safety boundary for v1:
 - Read-only repository access.
 - No file writes, commits, pushes, merges, or PR creation.
-- The model may propose implementation steps, but cannot mutate production code.
+- Claude authentication uses Anthropic Workload Identity Federation.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from typing import Any
 
 GITHUB_API = "https://api.github.com"
 ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
 XAI_RESPONSES_API = "https://api.x.ai/v1/responses"
 
 ROLE_MAP = {
@@ -94,6 +95,13 @@ def http_json(
         raise RuntimeError(f"HTTP {exc.code} calling {url}: {detail}") from exc
 
 
+def require_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
 def github_headers() -> dict[str, str]:
     token = require_env("GITHUB_TOKEN")
     return {
@@ -102,13 +110,6 @@ def github_headers() -> dict[str, str]:
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "roblox-ai-game-dispatcher-v1",
     }
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
 
 
 def load_event() -> dict[str, Any]:
@@ -249,14 +250,40 @@ Keep claims grounded in the supplied repository/Issue context.
 """.strip()
 
 
+def exchange_anthropic_token() -> str:
+    token_file = require_env("ANTHROPIC_IDENTITY_TOKEN_FILE")
+    with open(token_file, "r", encoding="utf-8") as f:
+        assertion = f.read().strip()
+    if not assertion:
+        raise RuntimeError("Anthropic identity token file is empty.")
+
+    data = http_json(
+        ANTHROPIC_TOKEN_URL,
+        method="POST",
+        payload={
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": assertion,
+            "federation_rule_id": require_env("ANTHROPIC_FEDERATION_RULE_ID"),
+            "organization_id": require_env("ANTHROPIC_ORGANIZATION_ID"),
+            "service_account_id": require_env("ANTHROPIC_SERVICE_ACCOUNT_ID"),
+            "workspace_id": require_env("ANTHROPIC_WORKSPACE_ID"),
+        },
+        timeout=90,
+    )
+    access_token = str(data.get("access_token") or "").strip()
+    if not access_token:
+        raise RuntimeError("Anthropic WIF exchange returned no access_token.")
+    return access_token
+
+
 def call_anthropic(prompt: str) -> str:
-    key = require_env("ANTHROPIC_API_KEY")
+    access_token = exchange_anthropic_token()
     model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
     data = http_json(
         ANTHROPIC_API,
         method="POST",
         headers={
-            "x-api-key": key,
+            "Authorization": f"Bearer {access_token}",
             "anthropic-version": "2023-06-01",
         },
         payload={
@@ -312,7 +339,6 @@ def call_xai(prompt: str) -> str:
 def post_result(issue_number: int, agent: str, text: str) -> None:
     marker = f"<!-- ai-dispatcher-v1 agent={agent} -->"
     body = f"{marker}\n{text}"
-    # GitHub issue comments have a maximum body size; keep room for marker.
     if len(body) > 60000:
         body = body[:59500] + "\n\n[TRUNCATED BY AI DISPATCHER V1]"
     github_post(f"/issues/{issue_number}/comments", {"body": body})
