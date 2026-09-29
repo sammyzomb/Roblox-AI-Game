@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       agent:
-        description: "Agent key: CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
+        description: "Agent key: CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-ANIMATION-DESIGNER, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
         required: true
         type: string
 
