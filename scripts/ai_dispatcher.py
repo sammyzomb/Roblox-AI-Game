@@ -50,6 +50,11 @@ ROLE_MAP = {
         "role": "Art Supervisor / 美術監督",
         "focus": "Art review, visual quality standards, consistency, readability, mobile/performance review.",
     },
+    "GROK-ANIMATION-DESIGNER": {
+        "provider": "xai",
+        "role": "Animation Designer / 動畫設計",
+        "focus": "Character locomotion, combat animation language, timing/readability, hit reactions, dodge/block/parry, boss telegraphs, weapon handling, mobile animation clarity, and animation asset planning.",
+    },
     "GROK-SFX-PLANNER": {
         "provider": "xai",
         "role": "Sound Effects Planner / 音效策畫",
@@ -145,7 +150,8 @@ def resolve_target(event: dict[str, Any]) -> tuple[int, str, str]:
             "No supported [DISPATCH:<AGENT>] marker found. "
             "Use [DISPATCH:CLAUDE], [DISPATCH:GROK], "
             "[DISPATCH:GROK-ART-PLANNER], [DISPATCH:GROK-ART-SUPERVISOR], "
-            "[DISPATCH:GROK-SFX-PLANNER], or [DISPATCH:GROK-MUSIC-PLANNER]."
+            "[DISPATCH:GROK-ANIMATION-DESIGNER], [DISPATCH:GROK-SFX-PLANNER], "
+            "or [DISPATCH:GROK-MUSIC-PLANNER]."
         )
     return issue_number, agent, body
 
