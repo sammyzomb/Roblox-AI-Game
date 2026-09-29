@@ -34,6 +34,11 @@
 ### Art Supervisor
 - Owns visual quality review and consistency only.
 
+### Animation Designer
+- Owns animation direction, movement/combat animation language, timing/readability, boss telegraphs, weapon handling, and animation asset planning only.
+- Primary deliverable: `docs/ANIMATION_DIRECTION.md`.
+- Does not own gameplay rules, combat balance, or production gameplay code.
+
 ### SFX Planner
 - Owns sound-effect planning and event mapping only.
 
