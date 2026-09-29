@@ -108,6 +108,9 @@ test("RateLimiter clear forgets a key", function()
 	eq(limiter:allow("a", 1), true)
 end)
 
+-- Combat + progression core (Issue #6)
+require("./combat_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")

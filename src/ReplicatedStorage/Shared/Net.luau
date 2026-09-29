@@ -10,6 +10,8 @@ Net.Names = table.freeze({
 	RequestAction = "RequestAction", -- client -> server: (actionId: string)
 	StateChanged = "StateChanged", -- server -> client: (state: ClientState)
 	GetState = "GetState", -- client -> server, returns ClientState?
+	CombatRequest = "CombatRequest", -- client -> server: (request: CombatRequest) see CombatService
+	CombatEvent = "CombatEvent", -- server -> clients: (event: CombatEvent) presentation only
 })
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")

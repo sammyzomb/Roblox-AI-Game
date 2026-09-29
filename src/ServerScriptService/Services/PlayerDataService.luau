@@ -5,10 +5,13 @@
 -- Public API:
 --   PlayerDataService:Get(player) -> PlayerData?        nil until loaded
 --   PlayerDataService:Update(player, mutator) -> boolean mutator(data) must not yield
+--   PlayerDataService:GrantMilestone(player, milestoneId) -> boolean  true if newly granted
+--   PlayerDataService:GetProfile(player) -> ProgressionGates.Profile?  level + milestones for unlock checks
 --   PlayerDataService.Loaded:Connect(function(player, data) end)
 --   PlayerDataService.Changed:Connect(function(player, data) end)
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
@@ -42,12 +45,19 @@ local function keyFor(player: Player): string
 	return `player_{player.UserId}`
 end
 
+local STARTER: PlayerDataModel.Starter = {
+	Loadout = Config.Combat.StarterLoadout,
+	Consumables = Config.Combat.StarterConsumables,
+}
+
 local function toClient(data: PlayerData): PlayerDataModel.ClientState
 	return {
 		Coins = data.Coins,
 		Xp = data.Xp,
 		Level = data.Level,
 		XpToNext = Progression.xpToNextLevel(data.Level, Config.Progression),
+		Loadout = table.clone(data.Loadout),
+		Consumables = table.clone(data.Consumables),
 	}
 end
 
@@ -67,11 +77,16 @@ local function onPlayerAdded(player: Player)
 		return -- left while loading
 	end
 
-	local data, fromNewerVersion = PlayerDataModel.reconcile(if ok then raw else nil)
+	local data, fromNewerVersion = PlayerDataModel.reconcile(if ok then raw else nil, STARTER)
 	if not ok then
 		warn(`[PlayerData] Load failed for {player.Name}; this session will not be saved to protect stored data.`)
 	elseif fromNewerVersion then
 		warn(`[PlayerData] {player.Name} has data from a newer version; this session will not be saved.`)
+	end
+
+	-- Studio test sessions (nothing is persisted) start high enough to try all gear.
+	if store.isMemory and RunService:IsStudio() and data.Level < Config.Combat.StudioStartLevel then
+		data.Level = Config.Combat.StudioStartLevel
 	end
 
 	sessions[player] = { data = data, canSave = ok and not fromNewerVersion, dirty = false }
@@ -141,6 +156,24 @@ function PlayerDataService:Update(player: Player, mutator: (PlayerData) -> ()): 
 	PlayerDataService.Changed:Fire(player, session.data)
 	stateChanged:FireClient(player, toClient(session.data))
 	return true
+end
+
+function PlayerDataService:GetProfile(player: Player): { Level: number, Milestones: { [string]: boolean } }?
+	local session = sessions[player]
+	if not session then
+		return nil
+	end
+	return { Level = session.data.Level, Milestones = session.data.Milestones }
+end
+
+function PlayerDataService:GrantMilestone(player: Player, milestoneId: string): boolean
+	local session = sessions[player]
+	if not session or session.data.Milestones[milestoneId] then
+		return false
+	end
+	return self:Update(player, function(data)
+		data.Milestones[milestoneId] = true
+	end)
 end
 
 return PlayerDataService

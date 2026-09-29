@@ -27,7 +27,7 @@ This document explains how to set up, run and extend the Roblox project foundati
 
 Expected:
 
-- Output shows `[Server] booted 2 module(s)` and `[Client] booted 1 module(s)`.
+- Output shows `[Server] booted 4 module(s)`, `[Combat] Studio training dummies spawned` and `[Client] booted 2 module(s)`.
 - A HUD at the top shows `Coins: 0    Level 1` and an xp bar.
 - Press **E** (keyboard), **X** (gamepad) or the on-screen **Collect** button (touch / mobile emulator) → coins +1, xp bar fills, level goes up.
 
@@ -42,7 +42,7 @@ To produce a place file without Studio sync: `rojo build -o build.rbxlx`.
 luau tests/run.luau
 ```
 
-Covers the pure modules: `Progression`, `PlayerDataModel`, `RateLimiter`. Code that uses Roblox APIs (services, remotes, UI) is verified by play-testing in Studio.
+Covers the pure modules: `Progression`, `PlayerDataModel`, `RateLimiter`, and the whole combat + progression core in `Shared/Combat` and `ProgressionGates` (see `tests/combat_spec.luau`). Code that uses Roblox APIs (services, remotes, UI) is verified by play-testing in Studio.
 
 ## 4. Source layout
 
@@ -149,3 +149,32 @@ Listens on `RequestAction`. A request is accepted only if the action id is a str
 - The "Collect" action has no world object yet. The gameplay theme is undecided (see Grok's MVP proposal, Issue #2). Once chosen, the action should be tied to world interaction (ProximityPrompt / touch parts) and validated by distance on the server.
 - No automated tests for Roblox-API code yet. TestEZ or Jest-Lua in Studio can be added later if needed.
 - The Lune runtime was considered for tests but is blocked by Windows Smart App Control on the dev machine; the Luau CLI is used instead.
+
+
+## Combat (Issue #6)
+
+Full API and extension points: [`docs/COMBAT_API.md`](COMBAT_API.md).
+
+### Play-testing combat in Studio
+
+Three training dummies spawn in Studio only (levels 1, 10, 20; the last two carry shields).
+New players start with a Training Sword, a Leather Vest and 3 Health Potions.
+
+| Action | Keyboard / mouse | Gamepad | Touch |
+|---|---|---|---|
+| Attack (main-hand "Primary") | Left click | R2 | Attack button |
+| Skill (next main-hand attack) | Q | R1 | Skill button |
+| Off-hand attack | R | L1 | Off button |
+| Block (hold, needs a shield) | F | L2 | Block button |
+| Health potion | 1 | D-pad up | Potion button |
+
+When Studio uses the in-memory DataStore (unpublished place), players start at level 20
+(`Config.Combat.StudioStartLevel`) so every level-gated weapon can be tried. Live servers are unaffected.
+To switch weapons, run this in the Studio command bar on the **client** during Play:
+
+```lua
+game.ReplicatedStorage.Remotes.CombatRequest:FireServer({ Action = "Equip", Slot = "MainHand", ItemId = "iron_greatsword" })
+game.ReplicatedStorage.Remotes.CombatRequest:FireServer({ Action = "Equip", Slot = "OffHand", ItemId = "wooden_shield" })
+```
+Weapon ids are the keys in `src/ReplicatedStorage/Shared/Combat/Data/Weapons.luau`
+(e.g. `ash_spear`, `hunting_bow`, `heavy_crossbow`, `ember_staff`, `frost_wand`, `runeblade`).
