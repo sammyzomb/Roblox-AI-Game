@@ -34,6 +34,29 @@ Deliverables:
 - review comments on art-related PRs
 - approval / revision notes
 
+### Animation Designer
+Primary responsibility:
+- Character locomotion animation language
+- Idle / walk / run / jump / fall / landing
+- Melee / ranged / magic / defense animation direction
+- Dodge / block / parry / hit reaction / knockback / death
+- Combo transition and weapon handling rules
+- Boss attack telegraph readability
+- Mobile readability and animation performance constraints
+
+Deliverables:
+- docs/ANIMATION_DIRECTION.md
+- animation state/action matrix
+- combat timing/readability rules
+- animation asset priority list
+- implementation handoff notes for engineering
+
+Boundaries:
+- Does not redefine gameplay rules or combat balance.
+- Does not replace Art Planner's overall visual direction.
+- Does not own production gameplay code.
+- Raises cross-discipline conflicts to ChatGPT Technical Lead.
+
 ### Sound Effects Planner
 Primary responsibility:
 - Combat SFX plan
