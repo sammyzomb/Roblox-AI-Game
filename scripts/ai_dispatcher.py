@@ -294,33 +294,121 @@ def exchange_anthropic_token() -> str:
     return access_token
 
 
+def extract_anthropic_text(data: dict[str, Any]) -> str:
+    """Extract user-visible text from Anthropic Messages API responses.
+
+    Be tolerant of minor response-shape variation. We intentionally do not
+    serialize non-text blocks into Issue comments because they may contain
+    internal/provider metadata rather than a user-facing answer.
+    """
+    pieces: list[str] = []
+    content = data.get("content") or []
+    if not isinstance(content, list):
+        return ""
+
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+
+        value = block.get("text")
+        if isinstance(value, str) and value.strip():
+            pieces.append(value.strip())
+            continue
+
+        # Defensive fallback for nested content payloads.
+        nested = block.get("content")
+        if isinstance(nested, list):
+            for item in nested:
+                if isinstance(item, dict):
+                    nested_text = item.get("text")
+                    if isinstance(nested_text, str) and nested_text.strip():
+                        pieces.append(nested_text.strip())
+
+    return "\n".join(pieces).strip()
+
+
+def anthropic_safe_diagnostics(data: dict[str, Any]) -> str:
+    """Return non-secret response metadata useful for diagnosing empty output."""
+    content = data.get("content") or []
+    block_types: list[str] = []
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict):
+                block_types.append(str(block.get("type") or "unknown"))
+            else:
+                block_types.append(type(block).__name__)
+
+    usage = data.get("usage")
+    safe_usage = usage if isinstance(usage, dict) else {}
+
+    diagnostic = {
+        "response_type": data.get("type"),
+        "model": data.get("model"),
+        "stop_reason": data.get("stop_reason"),
+        "stop_sequence": data.get("stop_sequence"),
+        "content_block_types": block_types,
+        "usage": {
+            key: safe_usage.get(key)
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            )
+            if key in safe_usage
+        },
+    }
+    return json.dumps(diagnostic, ensure_ascii=False, sort_keys=True)
+
+
 def call_anthropic(prompt: str) -> str:
     access_token = exchange_anthropic_token()
     model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
-    data = http_json(
-        ANTHROPIC_API,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "anthropic-version": "2023-06-01",
-        },
-        payload={
-            "model": model,
-            "max_tokens": 6000,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=180,
-    )
-    parts = [
-        block.get("text", "")
-        for block in data.get("content", [])
-        if block.get("type") == "text"
-    ]
-    text = "\n".join(p for p in parts if p).strip()
-    if not text:
-        raise RuntimeError("Anthropic returned no text content.")
-    return text
 
+    last_diagnostic = "no response received"
+    for attempt in range(2):
+        attempt_prompt = prompt
+        if attempt == 1:
+            attempt_prompt = (
+                prompt
+                + "\n\n"
+                + "RETRY REQUIREMENT: The previous provider response contained no "
+                  "user-visible text. Return a plain-text response beginning with one "
+                  "required status marker. Do not return only thinking/tool blocks."
+            )
+
+        data = http_json(
+            ANTHROPIC_API,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "anthropic-version": "2023-06-01",
+            },
+            payload={
+                "model": model,
+                "max_tokens": 6000,
+                "messages": [{"role": "user", "content": attempt_prompt}],
+            },
+            timeout=180,
+        )
+
+        text = extract_anthropic_text(data)
+        if text:
+            if attempt:
+                print("Anthropic empty-content retry succeeded.", file=sys.stderr)
+            return text
+
+        last_diagnostic = anthropic_safe_diagnostics(data)
+        print(
+            f"Anthropic returned no text on attempt {attempt + 1}/2; "
+            f"safe diagnostics={last_diagnostic}",
+            file=sys.stderr,
+        )
+
+    raise RuntimeError(
+        "Anthropic returned no text content after 2 attempts; "
+        f"safe diagnostics={last_diagnostic}"
+    )
 
 def extract_xai_text(data: dict[str, Any]) -> str:
     if isinstance(data.get("output_text"), str) and data["output_text"].strip():
