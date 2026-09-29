@@ -77,6 +77,10 @@ Post one of these markers in the assigned GitHub Issue:
 ```
 
 ```
+[DISPATCH:GROK-ANIMATION-DESIGNER]
+```
+
+```
 [DISPATCH:GROK-SFX-PLANNER]
 ```
 
@@ -103,6 +107,7 @@ If blocked, report the exact dependency.
 | GROK | xAI | Secondary Developer / Reviewer |
 | GROK-ART-PLANNER | xAI | Art Planner |
 | GROK-ART-SUPERVISOR | xAI | Art Supervisor |
+| GROK-ANIMATION-DESIGNER | xAI | Animation Designer |
 | GROK-SFX-PLANNER | xAI | Sound Effects Planner |
 | GROK-MUSIC-PLANNER | xAI | Music Planner |
 
