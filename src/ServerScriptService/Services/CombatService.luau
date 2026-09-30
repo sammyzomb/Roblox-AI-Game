@@ -108,6 +108,16 @@ local limiter = RateLimiter.new(Config.Combat.RateLimit.MaxRequests, Config.Comb
 local playerData: any -- PlayerDataService, resolved in Init
 local combatEvent: RemoteEvent
 
+-- Set by TrainingGroundService:Init via CombatService:SetTrainingPredicate so
+-- persistent-data mutations (UseItem/Equip) can be rejected at the server
+-- boundary while a player is training, without CombatService requiring or
+-- depending on TrainingGroundService (which itself depends on CombatService).
+-- Defaults to "nobody is training" so behavior is unchanged until the
+-- training service registers itself.
+local isTraining: (player: Player) -> boolean = function()
+	return false
+end
+
 local entries: { [Model]: Entry } = {}
 local byId: { [string]: Entry } = {}
 local byPlayer: { [Player]: Entry } = {}
@@ -317,7 +327,21 @@ local function onCharacterAdded(player: Player, character: Model)
 	if old then
 		CombatService:Unregister(old.Model)
 	end
-	local entry = register(character, humanoid, root, combatant, player, playerRuleset[player] or Config.Combat.DefaultRuleset)
+	-- A fresh character (death/respawn, first join) must never silently
+	-- inherit a leftover "Training" ruleset from a session that did not
+	-- explicitly carry over (training sessions are tied to a specific
+	-- character/combatant, not the player forever). TrainingGroundService is
+	-- responsible for restoring the correct prior ruleset via SetRuleset
+	-- before/around this point; if for any reason playerRuleset is still
+	-- "Training" here (e.g. a respawn raced ahead of that cleanup), fall
+	-- back to the configured default rather than keep training rules active
+	-- on a character nobody asked to put into training.
+	local rulesetId = playerRuleset[player] or Config.Combat.DefaultRuleset
+	if rulesetId == "Training" then
+		rulesetId = Config.Combat.DefaultRuleset
+		playerRuleset[player] = rulesetId
+	end
+	local entry = register(character, humanoid, root, combatant, player, rulesetId)
 	byPlayer[player] = entry
 	equipSavedLoadout(player, combatant)
 end
@@ -614,6 +638,23 @@ function CombatService:SetRuleset(player: Player, rulesetId: string)
 	end
 end
 
+-- Returns the ruleset id currently stored for `player` (falls back to the
+-- configured default if the player has never had one set, e.g. before their
+-- first CharacterAdded). Used by TrainingGroundService to capture the prior
+-- ruleset before switching to "Training" so it can be restored exactly on
+-- exit/death/disconnect instead of assuming "PvE".
+function CombatService:GetRuleset(player: Player): string
+	return playerRuleset[player] or Config.Combat.DefaultRuleset
+end
+
+-- Lets another service (TrainingGroundService) register a predicate used to
+-- reject persistent-data-affecting requests (UseItem/Equip) while a player
+-- is in a training session. Kept as an injected callback instead of a direct
+-- require to avoid a circular dependency between the two services.
+function CombatService:SetTrainingPredicate(predicate: (player: Player) -> boolean)
+	isTraining = predicate
+end
+
 function CombatService:SetTeam(model: Model, team: string?)
 	local entry = entries[model]
 	if entry then
@@ -664,6 +705,13 @@ end
 ---------------------------------------------------------------------------
 
 local function onUseItem(entry: Entry, player: Player, itemId: string)
+	if isTraining(player) then
+		-- Persistent consumable stock must never be spent while training,
+		-- even though no training UI currently offers item usage: a client
+		-- could still send a raw UseItem request, so this is enforced at
+		-- the authoritative server boundary, not assumed from UI absence.
+		return reject(entry, "TrainingNoPersistentUse")
+	end
 	local data = playerData:Get(player)
 	if data == nil or (data.Consumables[itemId] or 0) <= 0 then
 		return reject(entry, "NoItem")
@@ -687,6 +735,13 @@ end
 local function onEquip(entry: Entry, player: Player, slot: string, itemId: string | false)
 	if not table.find(PlayerDataModel.LOADOUT_SLOTS, slot) then
 		return
+	end
+	if isTraining(player) then
+		-- Equip changes persist the loadout to PlayerDataService below; that
+		-- must never happen while training (presets are fixed per session
+		-- once implemented, and no UI currently sends Equip during training,
+		-- but the server cannot assume that holds for every client).
+		return reject(entry, "TrainingNoPersistentEquip")
 	end
 	local c = entry.Combatant
 	if c.Pending or c.Blocking then
