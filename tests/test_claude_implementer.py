@@ -9,6 +9,24 @@ import claude_implementer as runner
 
 
 class ImplementationTests(unittest.TestCase):
+    @patch.dict(os.environ, {"CLAUDE_MODEL": "claude-sonnet-5"})
+    def test_real_request_reserves_output_for_file_tools(self):
+        messages = [{"role": "user", "content": "bounded increment"}]
+        with patch.object(runner, "http_json", return_value={"stop_reason": "tool_use"}) as api:
+            runner.request_claude(messages, "test-token")
+        payload = api.call_args.kwargs["payload"]
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertEqual(payload["max_tokens"], 8000)
+        self.assertEqual(payload["model"], "claude-sonnet-5")
+        self.assertEqual(payload["messages"], messages)
+        self.assertEqual(payload["tools"], runner.TOOLS)
+
+    @patch.dict(os.environ, {"CLAUDE_MODEL": "a-future-model"})
+    def test_other_models_do_not_inherit_sonnet5_thinking_setting(self):
+        with patch.object(runner, "http_json", return_value={}) as api:
+            runner.request_claude([], "test-token")
+        self.assertNotIn("thinking", api.call_args.kwargs["payload"])
+
     def workspace(self):
         return runner.Workspace({"tree": [
             {"path": "src/main.lua", "type": "blob", "mode": "100644", "sha": "code", "size": 10},
