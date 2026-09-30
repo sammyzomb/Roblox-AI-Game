@@ -56,11 +56,18 @@ def authorize(event):
     body = comment.get("body", "")
     if not re.search(r"^\[IMPLEMENT:CLAUDE\]\s*$", body, re.M):
         raise ValueError("Missing exact implementation marker")
-    base = re.findall(r"^Base: (main|claude-dev)\s*$", body, re.M)
+    base = re.findall(r"^Base: ([^\r\n]+)$", body, re.M)
+    base = [value.strip() for value in base]
     spec = re.findall(r"^Spec-commit: ([0-9a-f]{40})\s*$", body, re.M)
     if len(base) != 1 or len(spec) != 1:
         raise ValueError("One Base and one pinned Spec-commit are required")
-    return int(issue["number"]), base[0], spec[0], body
+    number = int(issue["number"])
+    continuation = re.fullmatch(rf"claude/issue-{number}/run-[0-9]+-[0-9]+", base[0])
+    if base[0] not in ("main", "claude-dev") and not continuation:
+        raise ValueError("Base must be main, claude-dev or this issue's runner branch")
+    if continuation and len(re.findall(r"^Expected-head: ([0-9a-f]{40})\s*$", body, re.M)) != 1:
+        raise ValueError("Continuation requires one pinned Expected-head")
+    return number, base[0], spec[0], body
 
 
 def safe_path(path):
@@ -293,6 +300,10 @@ def main():
             raise ValueError("Target must be an open issue")
         branch_data = github_get("/branches/" + quote(base, safe=""))
         parent = branch_data["commit"]["sha"]
+        if base.startswith("claude/"):
+            expected = re.findall(r"^Expected-head: ([0-9a-f]{40})\s*$", trigger, re.M)
+            if expected != [parent]:
+                raise ValueError("Continuation head changed; Technical Lead must re-inspect")
         commit = github_get("/git/commits/" + parent)
         tree_sha = commit["tree"]["sha"]
         workspace = Workspace(github_get(f"/git/trees/{tree_sha}?recursive=1"), read_blob)

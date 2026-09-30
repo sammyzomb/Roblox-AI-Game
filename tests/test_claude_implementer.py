@@ -47,6 +47,23 @@ class ImplementationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.authorize(event)
 
+    @patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/game", "EVENT_NAME": "issue_comment"})
+    def test_continuation_only_same_issue_and_pinned_head(self):
+        event = {"action": "created", "issue": {"number": 23}, "comment": {
+            "user": {"login": "owner"}, "author_association": "OWNER"}}
+        def body(base, pin=True):
+            return ("[IMPLEMENT:CLAUDE]\nBase: " + base + "\nSpec-commit: " + "a" * 40
+                    + ("\nExpected-head: " + "b" * 40 if pin else ""))
+        for base in ("claude/issue-22/run-42-1", "other", "claude/issue-23/../../main"):
+            event["comment"]["body"] = body(base)
+            with self.assertRaises(ValueError):
+                runner.authorize(event)
+        event["comment"]["body"] = body("claude/issue-23/run-42-1", False)
+        with self.assertRaises(ValueError):
+            runner.authorize(event)
+        event["comment"]["body"] = body("claude/issue-23/run-42-1")
+        self.assertEqual(runner.authorize(event)[1], "claude/issue-23/run-42-1")
+
     def test_protected_paths_traversal_and_symlink_denied(self):
         ws = self.workspace()
         for path in ("../src/a.lua", "src/../a.lua", "src//a.lua", "src/.env.lua",
