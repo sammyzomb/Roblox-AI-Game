@@ -62,3 +62,51 @@ jobs:
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
           XAI_MODEL: ${{ vars.XAI_MODEL || 'grok-4.7' }}
         run: python3 scripts/ai_dispatcher.py
+
+  implement:
+    if: >
+      github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.event.comment.author_association == 'OWNER' &&
+      contains(github.event.comment.body, '[IMPLEMENT:CLAUDE]')
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout trusted coordinator code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify implementation runner
+        run: python3 -m unittest discover -s tests -p 'test_claude_implementer.py' -v
+
+      - name: Fetch GitHub OIDC token for Anthropic
+        shell: bash
+        run: |
+          umask 077
+          curl --fail -sS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" \
+            | jq -er .value > /tmp/gha-jwt
+
+      - name: Claude implements and opens draft PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          ANTHROPIC_IDENTITY_TOKEN_FILE: /tmp/gha-jwt
+          ANTHROPIC_FEDERATION_RULE_ID: fdrl_01AcTwt2NFyUCaGMRxmFrQAG
+          ANTHROPIC_ORGANIZATION_ID: 21c12f48-e933-49ca-b5bb-e6b84f901e5e
+          ANTHROPIC_SERVICE_ACCOUNT_ID: svac_01FtmSsticj8DHNRbayjucWv
+          ANTHROPIC_WORKSPACE_ID: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
+        run: python3 scripts/claude_implementer.py
