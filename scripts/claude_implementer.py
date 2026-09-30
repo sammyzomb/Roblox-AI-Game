@@ -208,6 +208,22 @@ def read_blob(sha):
     return base64.b64decode(data["content"]).decode("utf-8")
 
 
+def request_claude(messages, token):
+    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+    payload = {"model": model, "max_tokens": 8000,
+               "tools": TOOLS, "messages": messages}
+    # Sonnet 5 defaults to adaptive thinking, billed inside max_tokens.
+    # Disable it for this bounded file-editing slice so thinking cannot consume
+    # the whole response before a tool call. Keep model and token cap unchanged.
+    # Do not assume newer models accept disabled thinking.
+    if model == "claude-sonnet-5":
+        payload["thinking"] = {"type": "disabled"}
+    return http_json(ANTHROPIC_API, method="POST", timeout=180,
+                     headers={"Authorization": "Bearer " + token,
+                              "anthropic-version": "2023-06-01"},
+                     payload=payload)
+
+
 def comment(number, text):
     github_post(f"/issues/{number}/comments", {"body": text[:59000]})
 
@@ -269,6 +285,8 @@ def main():
                   "Only src/, tests/, and docs/TRAINING_SMOKE_TEST.md are writable. Reuse the existing combat core.\n"
                   "No shell, code execution, Studio, tests, Rojo, or LSP is available. Never claim those ran.\n"
                   "Keep work small enough for 24 rounds. Write meaningful code and smoke steps. Finish with a short handoff listing gaps and dependencies; no code dumps.\n"
+                  "Implement only the increment requested in Assignment; the full issue and spec remain acceptance context, not a demand to finish all features in this run.\n"
+                  "After inspecting the directly relevant modules, make incremental edits. Keep each write/replace call under 200 lines; split large edits across calls.\n"
                   "Do not declare all acceptance criteria complete when features or runtime tests are absent.\n"
                   f"Task #{issue_number}: {issue.get('title')}\n{issue.get('body')}\nAssignment:\n{trigger}\n"
                   f"Pinned approved scope:\n{approved_spec}\nGovernance:\n" + "\n\n".join(docs))
@@ -276,10 +294,7 @@ def main():
         token = exchange_anthropic_token()
         print("Anthropic WIF exchange succeeded", flush=True)
         def request(messages):
-            return http_json(ANTHROPIC_API, method="POST", timeout=180,
-                             headers={"Authorization": "Bearer " + token, "anthropic-version": "2023-06-01"},
-                             payload={"model": os.getenv("CLAUDE_MODEL", "claude-sonnet-5"),
-                                      "max_tokens": 8000, "tools": TOOLS, "messages": messages})
+            return request_claude(messages, token)
         report = run_agent(workspace, prompt, request)
         url, sha = publish(workspace, parent, tree_sha, issue_number, base, report)
         comment(issue_number, f"[HANDOFF]\nFrom: Claude\nTo: Technical Lead\nDraft PR: {url}\nCommit: {sha}\nFiles submitted: {len(workspace.changes)}\nRunner checks passed. Luau/Rojo/LSP/Studio not run. Please review, test and record acceptance gaps; do not merge PR #4 without smoke evidence.")

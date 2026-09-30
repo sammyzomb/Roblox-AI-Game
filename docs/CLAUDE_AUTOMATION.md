@@ -54,6 +54,16 @@ can open the draft through the GitHub connector; the Owner only needs to act if
 a setting or permission cannot be changed with available access.
 
 API usage is incurred only for explicitly authorized implementation commands.
+For `claude-sonnet-5`, the file-editing runner explicitly disables default
+adaptive thinking while keeping the existing 8,000-token response cap and model.
+This addresses run 36688110509, which consumed its entire response on thinking
+without a write. Other model configurations are left unchanged. See Anthropic's
+documented Sonnet 5 setting: https://platform.claude.com/docs/en/build-with-claude/thinking#turning-thinking-off.
+Assignments should name a small increment and require a short gap list; the full
+Issue remains the acceptance scope. Edits should be split into calls under 200
+lines. Truncated output is still rejected, never salvaged or automatically retried.
+For this diagnosed failure, Technical Lead authorizes at most one retry after
+the verified repair; another failure needs a new diagnosis and recorded decision.
 This is a bounded file-tool runner, not Claude Code or a general shell agent.
 Current rollout status must be read from Actions and task comments; documentation
 alone does not prove successful API authentication, code submission or gameplay.
