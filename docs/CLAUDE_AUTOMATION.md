@@ -72,3 +72,11 @@ the verified repair; another failure needs a new diagnosis and recorded decision
 This is a bounded file-tool runner, not Claude Code or a general shell agent.
 Current rollout status must be read from Actions and task comments; documentation
 alone does not prove successful API authentication, code submission or gameplay.
+
+## Continuing submitted work
+
+Technical Lead may use `Base: claude/issue-N/run-ID-attempt` for the same task
+only, with exactly one `Expected-head: <40-character SHA>`. The runner checks
+the live head before model calls and stops on drift. It creates a new isolated
+branch and stacked draft; it never modifies the source branch. Existing file
+restrictions, owner authorization, budgets and Studio gates remain unchanged.
