@@ -1,0 +1,152 @@
+# Training Ground Smoke Test (Task #23, Increment A)
+
+Status: **NOT YET RUN IN STUDIO.** No shell/Studio/Rojo tool was available in
+this session. This document is the reproducible operation sheet required by
+the task; it is not evidence of a passed test. Mark each step Pass/Fail with
+the commit SHA and Output panel contents when it is actually run.
+
+## Scope of this increment
+
+Implements ONLY:
+- Player entry/exit into a training zone (server-authoritative, via
+  CollectionService-tagged parts).
+- Temporary session state: an in-memory "is this player training" flag that
+  is never written to `PlayerDataService` / DataStore.
+- HP/MP/Stamina reset on entry and on exit (`CombatService:ResetVitals`).
+- Cleanup on death inside the zone, on manual exit, and on disconnect, so no
+  training state or ruleset ever leaks into normal play.
+
+Explicitly OUT of scope for this increment (still open from #23):
+- Attackable dummies with visible server-computed damage numbers (dummies
+  exist today only via the Studio-only `TrainingDummyService`, unchanged).
+- The timed attack-practice source for blocking/shields.
+- Training potions (temporary consumable inventory).
+- Sword/Mage/Archer preset loadouts.
+- Rifle weapon / shield practice (depends on base combat data still being
+  extended per #23's own dependency note).
+
+## Files touched
+
+- `src/ServerScriptService/Services/TrainingGroundService.luau` (new)
+- `src/ServerScriptService/Services/CombatService.luau` (added `ResetVitals`)
+- `src/ReplicatedStorage/Shared/Combat/Rulesets.luau` (added `Training` ruleset)
+- `tests/training_ground_spec.luau` (new)
+- `tests/run.luau` (wired the new spec in)
+- `docs/TRAINING_SMOKE_TEST.md` (this file)
+
+## Required world setup (not included — a map/Studio dependency)
+
+This service is data-driven and does nothing until a map provides:
+1. A `BasePart` tagged `TrainingEntrance` (CollectionService tag) covering the
+   training zone's entry point.
+2. A `BasePart` tagged `TrainingExit` covering the exit point.
+3. Optionally, a `BasePart` tagged `TrainingReturnSpawn` marking where a
+   player should reappear in the normal world after exiting. If absent, the
+   player's position is left as-is (only ruleset/vitals are reset).
+
+Until these parts exist in the place file, `TrainingGroundService` loads and
+idles safely (no errors), but the zone is not enterable. **This is a listed
+dependency/gap, not a hidden failure.**
+
+## Pre-conditions
+
+- Base: `claude-dev` at the spec-commit for this assignment.
+- PR #4 (combat core) Studio gate: still not passed as of this writing: do
+  not treat this smoke test as unblocking that gate.
+- Run in a Studio session with at least 2 test accounts (or 1 account run
+  twice) to check disconnect cleanup realistically requires a real leave
+  event; a single local Studio session can approximate it by using
+  `game:BindToClose` behavior or simply removing the character/leaving Play
+  mode while training.
+
+## Steps
+
+1. **Baseline load**
+   - Start a Play/Studio test session on the commit SHA recorded below.
+   - Confirm Output shows `[Server] booted N module(s)` and no errors
+     mentioning `TrainingGroundService`, `CombatService`, or `Rulesets`.
+
+2. **Entry**
+   - Walk the test character onto the `TrainingEntrance` part.
+   - Expected: no errors; combatant's HP/MP/Stamina are at max immediately
+     (check HUD attributes / `Model:GetAttribute("Health")`-style pools if
+     HUD is wired, otherwise confirm via `CombatService:GetCombatant`).
+   - Record: Pass/Fail, Output errors if any.
+
+3. **Combat while training (existing core, PvE-style targeting)**
+   - Attack a training dummy (Studio-only `TrainingDummyService` target) with
+     melee. Confirm the hit resolves normally (server-authoritative combat
+     unchanged).
+   - Record: Pass/Fail.
+
+4. **Resource draining and reset**
+   - Spend Stamina/Mana (attack, block, cast) so pools are below max.
+   - Trigger exit (`TrainingExit` part) then re-enter (`TrainingEntrance`).
+   - Expected: HP/MP/Stamina are full again immediately after crossing either
+     tagged part.
+   - Record: Pass/Fail.
+
+5. **Repeated in/out**
+   - Cross entrance -> exit -> entrance -> exit rapidly (within debounce
+     window, ~1s apart) several times.
+   - Expected: no duplicate session errors, no ruleset stuck on `Training`
+     after the final exit. Confirm via `TrainingGroundService:IsTraining`
+     returning `false` after the last exit (add a temporary print if no
+     inspector is available).
+   - Record: Pass/Fail.
+
+6. **Death inside the training zone**
+   - While training, take lethal damage (e.g. repeated dummy hits, or a
+     temporary debug call to zero Health).
+   - Expected: character dies and respawns per standard Roblox flow; the new
+     character is not stuck in the `Training` ruleset (default is `PvE` per
+     `CombatService`'s `onCharacterAdded`); no error in Output.
+   - Record: Pass/Fail.
+
+7. **Disconnect mid-session**
+   - While training, leave the game (or stop Play mode) without exiting via
+     the `TrainingExit` part first.
+   - Expected: no error in Output on `PlayerRemoving`; no residual state (this
+     is best verified by code inspection here since a fresh join after
+     reconnect should start untrained — confirm on rejoin that the new
+     character is not silently in `Training` ruleset).
+   - Record: Pass/Fail.
+
+8. **Persistent-data isolation (critical acceptance check)**
+   - Before entering training, note the player's saved `Loadout` and
+     `Consumables` (via `PlayerDataService:Get` / `GetState` remote).
+   - Enter training, fight, exit (or disconnect and rejoin).
+   - Expected: `Loadout` and `Consumables` are byte-for-byte unchanged from
+     before entry (no potions consumed from real inventory since none are
+     implemented yet in this increment; no equipment change).
+   - Record: Pass/Fail.
+
+## Result template
+
+```
+Commit SHA:
+Test mode: Studio Play / Studio Team Test / Live server
+Step 1: Pass/Fail — Output:
+Step 2: Pass/Fail — Output:
+Step 3: Pass/Fail — Output:
+Step 4: Pass/Fail — Output:
+Step 5: Pass/Fail — Output:
+Step 6: Pass/Fail — Output:
+Step 7: Pass/Fail — Output:
+Step 8: Pass/Fail — Output:
+Overall: PASS / FAIL / BLOCKED — reason:
+```
+
+## Known gaps / dependencies at delivery time
+
+- No map parts (`TrainingEntrance`/`TrainingExit`/`TrainingReturnSpawn`) are
+  included in this change; a level designer or follow-up commit must place
+  them for the zone to be enterable in Studio.
+- No client-facing UI/prompt indicates "you are now training"; this
+  increment is server-state only, as scoped.
+- Full #23 acceptance items (dummies with damage display, timed attacker,
+  training potions, 3 class presets, rifle/shield practice) are not
+  implemented and must not be reported as complete.
+- This document was written without Studio access; all steps are unexecuted
+  and must be run and filled in before this task can be considered to have
+  passing Studio evidence.

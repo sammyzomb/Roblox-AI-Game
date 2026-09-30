@@ -111,6 +111,9 @@ end)
 -- Combat + progression core (Issue #6)
 require("./combat_spec")(test, eq)
 
+-- Training ground session isolation (Issue #23, Increment A)
+require("./training_ground_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")
