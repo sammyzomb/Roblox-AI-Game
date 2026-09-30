@@ -46,6 +46,22 @@ local RULESETS: { [string]: Ruleset } = {
 		ResistCap = 0.5,
 		HealingMultiplier = 0.5,
 	},
+
+	-- Training ground: players practice on stationary dummies/attack sources.
+	-- Same shape as PvE (players cannot hurt each other here); kept as its own
+	-- id so training-only tuning never has to change the live PvE ruleset.
+	Training = {
+		Id = "Training",
+		Targeting = {
+			PlayerVsPlayer = false,
+			PlayerVsNPC = true,
+			NPCVsPlayer = true,
+			NPCVsNPC = false,
+			FriendlyFire = false,
+		},
+		DamageMultiplier = 1,
+		ResistCap = 0.75,
+	},
 }
 
 for _, ruleset in RULESETS do

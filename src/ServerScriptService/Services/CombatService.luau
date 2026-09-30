@@ -631,6 +631,34 @@ function CombatService:Revive(model: Model)
 	sync(entry, now())
 end
 
+-- Restores a live combatant to full Health and full resource pools, and
+-- clears transient statuses/blocking/pending state. Used by training areas
+-- and similar "practice reset" features; does not touch persistent data.
+-- No-op if the model is not a registered, living combatant.
+function CombatService:ResetVitals(model: Model): boolean
+	local entry = entries[model]
+	if entry == nil or not entry.Combatant.Alive then
+		return false
+	end
+	local c = entry.Combatant
+	c.Health = c.MaxHealth
+	for _, pool in c.Pools do
+		pool.Current = pool.Max
+		pool.LastSpent = 0
+	end
+	c.Statuses = {}
+	c.Blocking = false
+	c.BlockSince = 0
+	c.Pending = nil
+	c.BusyUntil = 0
+	c.VulnerableFrom = 0
+	c.VulnerableUntil = 0
+	c.VulnerabilityMultiplier = 1
+	entry.Humanoid.Health = c.MaxHealth
+	sync(entry, now())
+	return true
+end
+
 ---------------------------------------------------------------------------
 -- Remote handling
 ---------------------------------------------------------------------------
