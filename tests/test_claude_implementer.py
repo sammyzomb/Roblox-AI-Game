@@ -79,6 +79,16 @@ class ImplementationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.workspace().write("src/a.lua", "a" * (runner.MAX_FILE_BYTES + 1))
 
+    def test_truncated_failure_is_explicit_without_response_text(self):
+        response = {"stop_reason": "max_tokens", "model": "test-model",
+                    "usage": {"output_tokens": 8000},
+                    "content": [{"type": "text", "text": "PRIVATE-RESPONSE"}]}
+        with self.assertRaisesRegex(runner.RunnerBlocked, "max_tokens"):
+            runner.run_agent(self.workspace(), "task", lambda messages: response)
+        diagnostic = runner.anthropic_safe_diagnostics(response)
+        self.assertIn('"output_tokens": 8000', diagnostic)
+        self.assertNotIn("PRIVATE-RESPONSE", diagnostic)
+
     @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REPOSITORY": "owner/game"})
     def test_publish_creates_isolated_ref_and_draft_without_merge(self):
         ws = self.workspace()
