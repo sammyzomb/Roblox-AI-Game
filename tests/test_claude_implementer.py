@@ -107,6 +107,88 @@ class ImplementationTests(unittest.TestCase):
         self.assertIn('"output_tokens": 8000', diagnostic)
         self.assertNotIn("PRIVATE-RESPONSE", diagnostic)
 
+    def test_budget_checkpoint_preserves_edits_and_warns_before_limit(self):
+        ws = self.workspace()
+        response = {"stop_reason": "tool_use", "content": [{"type": "tool_use",
+                    "id": "write", "name": "write_file", "input": {
+                    "path": "src/main.lua", "content": "return 2\n"}}]}
+        seen = []
+        def request(messages):
+            if len(messages) > 1:
+                seen.append(messages[-1]["content"][-1]["text"])
+            return response
+        with self.assertRaises(runner.IncompleteDraft):
+            runner.run_agent(ws, "task", request, rounds=2)
+        self.assertIn("1 provider calls remain", seen[0])
+        self.assertIn("STOP expanding scope", seen[0])
+        self.assertEqual(ws.changes, {"src/main.lua": "return 2\n"})
+
+    def test_invalid_empty_and_truncated_edits_never_become_checkpoint(self):
+        for content in ("return 2 \n", None):
+            ws = self.workspace()
+            if content is not None:
+                ws.write("src/main.lua", content)
+            try:
+                runner.run_agent(ws, "task", lambda _: {}, rounds=0)
+            except (ValueError, runner.RunnerBlocked) as exc:
+                self.assertNotIsInstance(exc, runner.IncompleteDraft)
+            else:
+                self.fail("Invalid checkpoint accepted")
+        ws = self.workspace()
+        ws.write("src/main.lua", "return 2\n")
+        with self.assertRaises(runner.RunnerBlocked) as caught:
+            runner.run_agent(ws, "task", lambda _: {"stop_reason": "max_tokens"})
+        self.assertNotIsInstance(caught.exception, runner.IncompleteDraft)
+
+    @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/game"})
+    def test_main_checkpoint_reports_blocked_and_keeps_failure_exit(self):
+        import base64
+        def get(path):
+            if path == "/issues/23":
+                return {"state": "open", "title": "training", "body": "task"}
+            if path.startswith("/branches/"):
+                return {"commit": {"sha": "parent"}}
+            if path.startswith("/git/commits/"):
+                return {"tree": {"sha": "tree"}}
+            if path.startswith("/git/trees/"):
+                return {"tree": []}
+            return {"content": base64.b64encode(b"governance").decode()}
+        def agent(ws, prompt, request):
+            ws.write("src/new.lua", "return 1\n")
+            runner.budget_exhausted(ws)
+        with patch.object(runner, "load_event", return_value={}), \
+             patch.object(runner, "authorize", return_value=(23, "claude-dev", "a" * 40, "task")), \
+             patch.object(runner, "github_get", side_effect=get), \
+             patch.object(runner, "exchange_anthropic_token", return_value="test"), \
+             patch.object(runner, "run_agent", side_effect=agent), \
+             patch.object(runner, "publish", return_value=("draft-url", "sha")) as publish, \
+             patch.object(runner, "comment") as comment:
+            self.assertEqual(runner.main(), 1)
+        self.assertTrue(publish.call_args.kwargs["incomplete"])
+        blockers = [c.args for c in comment.call_args_list if c.args[1].startswith("[BLOCKED]")]
+        self.assertEqual([b[0] for b in blockers], [23, 3])
+        self.assertTrue(all("draft-url" in b[1] for b in blockers))
+        self.assertFalse(any(c.args[1].startswith("[HANDOFF]") for c in comment.call_args_list))
+
+    def test_deadline_checkpoint_requires_valid_edits(self):
+        ws = self.workspace()
+        ws.write("src/main.lua", "return 2\n")
+        with patch.object(runner.time, "monotonic", side_effect=[0, 1201]):
+            with self.assertRaises(runner.IncompleteDraft):
+                runner.run_agent(ws, "task", lambda _: self.fail("Extra paid call"))
+
+    @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/game"})
+    def test_checkpoint_pr_is_explicitly_incomplete_and_draft(self):
+        ws = self.workspace()
+        ws.write("src/main.lua", "return 2\n")
+        with patch.object(runner, "github_post", return_value={"sha": "new", "html_url": "pr"}) as post:
+            runner.publish(ws, "parent", "tree", 23, "claude-dev", "No handoff", incomplete=True)
+        pr = next(c.args[1] for c in post.call_args_list if c.args[0] == "/pulls")
+        self.assertTrue(pr["draft"])
+        self.assertIn("incomplete", pr["title"])
+        self.assertIn("DO NOT MERGE", pr["body"])
+        self.assertIn("NOT RUN", pr["body"])
+
     @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REPOSITORY": "owner/game"})
     def test_publish_creates_isolated_ref_and_draft_without_merge(self):
         ws = self.workspace()

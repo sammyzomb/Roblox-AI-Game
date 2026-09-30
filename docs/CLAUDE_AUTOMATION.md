@@ -36,8 +36,13 @@ from a pinned base commit, not from an untrusted workflow checkout.
    `claude/issue-N/run-ID-attempt` branch with a real commit, and opens a draft PR.
 7. Reports the PR/commit to the task and #3 for Technical Lead review.
 
-No existing branch is overwritten. No merge API is available. Incomplete or
-truncated output is rejected; no branch is published for those failed runs.
+No existing branch is overwritten. No merge API is available. Truncated or malformed provider output is rejected; no branch is published for
+those failed runs. Budget exhaustion with validated edits instead saves an
+INCOMPLETE CHECKPOINT draft PR, posts BLOCKED to the task and #3, and keeps the
+job failed. This is recoverable work, not completed implementation. Empty or
+invalid edits cannot be checkpointed. No automatic retry or merge occurs.
+Each tool-result round reports the remaining calls; the last four urge handoff.
+The model, token cap, 24 calls and deadline are unchanged.
 Reruns use separate branches and require Technical Lead to reconcile duplicates.
 
 ## Verification limits
