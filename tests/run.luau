@@ -119,6 +119,10 @@ require("./training_ground_spec")(test, eq)
 -- disconnect-safe ruleset restoration)
 require("./training_lifecycle_spec")(test, eq)
 
+-- Training scene bootstrap placement/geometry math (Issue #23 increment:
+-- training-scene-bootstrap)
+require("./training_scene_config_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")
