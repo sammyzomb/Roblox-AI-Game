@@ -1,6 +1,35 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
-## Correction pass (this assignment)
+## Second correction pass (this assignment: lifecycle-portability-identity-cleanup)
+
+Bounded correctness-only follow-up to the correction pass below, per
+Technical Lead source review (#31) and Grok independent review (#23):
+- `TrainingLifecycle.luau` now loads in both Roblox (`require(script.Parent...)`)
+  and the standalone Luau test runner (`require("./TrainingSession")`),
+  branching on whether the `script` global is present, instead of erroring
+  before tests can even run plain Luau has no `script`.
+- Player/character identity is no longer converted with `tostring` (which is
+  `Player.Name` in Roblox, collision-prone and mutable). `TrainingLifecycle`
+  and `TrainingSession` now key every table directly by the opaque
+  player/character value (object identity), matching how `CombatService`
+  itself keys `byPlayer`/`playerRuleset`. New regressions cover two distinct
+  fake players sharing a display Name, a mid-session rename, and
+  reconnect-as-a-new-object isolation.
+- Disconnect tombstones (`_departed`) are now a weak-keyed table
+  (`__mode = "k"`) instead of a strong table that retained every departed
+  Player object for the life of the server.
+- `TrainingLifecycle:Exit` now returns `(false, "ResetFailed")` if the vitals
+  reset fails after the ruleset/session restore already completed, instead
+  of unconditionally reporting success; the already-completed restore is not
+  rolled back (idempotent: a later `Exit` call reports `NotTraining`).
+- `TrainingGroundService`'s `hookPlayer` comment no longer claims a
+  `CharacterAdded` hookup that does not exist; it documents the actual
+  `CharacterRemoving`-only wiring and notes entry is driven by the entrance
+  zone touch handler instead.
+- No scene, dummy, preset, economy, balance, runner, workflow, or permission
+  changes are included in this pass.
+
+## First correction pass
 
 Fixed actual lifecycle/isolation defects found in the prior increment:
 - `TrainingGroundService` no longer hardcodes `PvE` on exit/death/disconnect;
@@ -55,7 +84,21 @@ Explicitly OUT of scope for this increment (still open from #23):
 - Rifle weapon / shield practice (depends on base combat data still being
   extended per #23's own dependency note).
 
-## Files touched (this correction pass)
+## Files touched (second correction pass: lifecycle-portability-identity-cleanup)
+
+- `src/ReplicatedStorage/Shared/Combat/TrainingLifecycle.luau` (dual-env
+  require, object-identity keys, weak-keyed `_departed`, `Exit` ResetFailed
+  reporting)
+- `src/ReplicatedStorage/Shared/Combat/TrainingSession.luau` (keys typed/used
+  as opaque `Id = unknown` instead of `string`)
+- `src/ServerScriptService/Services/TrainingGroundService.luau`
+  (CharacterRemoving-only doc correction)
+- `tests/training_lifecycle_spec.luau` (fake-adapter tables now `unknown`-
+  keyed; added identity-collision/rename/reconnect and ResetFailed
+  regressions)
+- `docs/TRAINING_SMOKE_TEST.md` (this section)
+
+## Files touched (first correction pass)
 
 - `src/ReplicatedStorage/Shared/Combat/TrainingSession.luau` (new: pure
   session state machine, extracted so the service and tests share one
