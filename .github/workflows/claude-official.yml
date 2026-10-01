@@ -41,6 +41,8 @@ jobs:
           anthropic_service_account_id: svac_01FtmSsticj8DHNRbayjucWv
           anthropic_workspace_id: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
 
+          trigger_phrase: "[CLAUDE-OFFICIAL]"
+
           # Keep this route bounded. Do not pin the old custom-runner model
           # string; let the official action use its supported default.
           base_branch: claude-dev
