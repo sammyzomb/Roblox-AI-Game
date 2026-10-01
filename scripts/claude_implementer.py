@@ -37,6 +37,16 @@ class IncompleteDraft(RunnerBlocked):
     """Budget exhaustion only; validated edits may be saved for review."""
 
 
+class PRCreationPending(Exception):
+    """Validated commit saved; only the known Actions PR policy denied delivery."""
+
+    def __init__(self, branch_url, sha, base, incomplete):
+        self.branch_url = branch_url
+        self.sha = sha
+        self.base = base
+        self.incomplete = incomplete
+
+
 def budget_exhausted(workspace):
     if not workspace.changes:
         raise RunnerBlocked("Implementation budget exhausted; no file changes")
@@ -286,8 +296,17 @@ def publish(workspace, parent, tree_sha, issue, base, report, *, incomplete=Fals
                   "no completion or acceptance claimed.\n\n" if incomplete else "")
     body = checkpoint + (f"Refs #{issue}\n\nBase: `{base}` at `{parent}`. Depends on PR #4 when based on claude-dev.\n\n"
             f"## Runner verification\n{checks}\n\n## Claude handoff (unverified claims)\n{report}")
-    pr = github_post("/pulls", {"title": title,
-                              "head": branch, "base": base, "draft": True, "body": body})
+    try:
+        pr = github_post("/pulls", {"title": title,
+                                  "head": branch, "base": base, "draft": True, "body": body})
+    except RuntimeError as exc:
+        # Narrow exception: never turn other API failures into a successful handoff.
+        endpoint = f"https://api.github.com/repos/{require_env('GITHUB_REPOSITORY')}/pulls"
+        detail = str(exc)
+        if (detail.startswith(f"HTTP 403 calling {endpoint}:")
+                and "GitHub Actions is not permitted to create or approve pull requests" in detail):
+            raise PRCreationPending(url, commit["sha"], base, incomplete) from None
+        raise
     return pr["html_url"], commit["sha"]
 
 
@@ -351,6 +370,23 @@ def main():
         comment(issue_number, f"[HANDOFF]\nFrom: Claude\nTo: Technical Lead\nDraft PR: {url}\nCommit: {sha}\nFiles submitted: {len(workspace.changes)}\nRunner checks passed. Luau/Rojo/LSP/Studio not run. Please review, test and record acceptance gaps; do not merge PR #4 without smoke evidence.")
         comment(3, f"[HANDOFF]\nFrom: Claude\nTo: Technical Lead\nTask: #{issue_number}\nDraft PR: {url}\nCommit: {sha}\nCode submission only; runtime and Studio acceptance pending.")
         return 0
+    except PRCreationPending as pending:
+        marker = "[BLOCKED]" if pending.incomplete else "[HANDOFF]"
+        status = (f"{marker}\nFrom: Claude implementation runner\nTo: Technical Lead\n"
+                  f"Task: #{issue_number}\nDelivery: WAITING_FOR_TECHNICAL_LEAD_PR\n"
+                  f"Saved branch: {pending.branch_url}\nCommit: {pending.sha}\nBase: {pending.base}\n"
+                  "Repository Actions policy denied automatic PR creation. Technical Lead must open a draft PR from this saved branch; do not rerun Claude.\n"
+                  + ("INCOMPLETE CHECKPOINT: budget exhausted; failure retained. Do not merge.\n"
+                     if pending.incomplete else "Code submission saved; PR delivery still pending.\n")
+                  + "Luau/Rojo/LSP/Studio NOT run. No gameplay completion or acceptance claimed.")
+        comment(issue_number, status)
+        comment(3, status)
+        print(status, flush=True)
+        summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as summary:
+                summary.write(status + "\n")
+        return 1 if pending.incomplete else 0
     except Exception as exc:
         # Never echo provider HTTP bodies or credentials into logs/issues.
         reason = str(exc) if isinstance(exc, (ValueError, KeyError, RunnerBlocked)) else type(exc).__name__
