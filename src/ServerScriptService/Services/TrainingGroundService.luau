@@ -177,14 +177,17 @@ local function disconnectPlayerListeners(player: Player)
 	end
 end
 
--- Hooks the REAL Player.CharacterRemoving/CharacterAdded signals (the prior
--- version of this file connected a no-op Parent-changed listener and
--- AncestryChanged instead, which never fired on ordinary death/respawn).
--- CharacterRemoving still has the removed character as its argument, so it
--- is passed straight to TrainingLifecycle:OnCharacterRemoved, which only
--- acts if that exact character still owns the current session - a stale
--- callback for an old character can never clear a newer one. Connections
--- are tracked per player and fully torn down on disconnect.
+-- Hooks the REAL Player.CharacterRemoving signal (the prior version of this
+-- file connected a no-op Parent-changed listener and AncestryChanged
+-- instead, which never fired on ordinary death/respawn). This service does
+-- not need CharacterAdded: entry is driven by the entrance zone touch
+-- handler (onEntranceTouched) reading player.Character at touch time, not by
+-- a join/respawn hook. CharacterRemoving still has the removed character as
+-- its argument, so it is passed straight to
+-- TrainingLifecycle:OnCharacterRemoved, which only acts if that exact
+-- character still owns the current session - a stale callback for an old
+-- character can never clear a newer one. Connections are tracked per player
+-- and fully torn down on disconnect.
 local function hookPlayer(player: Player)
 	disconnectPlayerListeners(player)
 	local connections: { RBXScriptConnection } = {}
@@ -200,17 +203,22 @@ end
 
 function TrainingGroundService:Init(registry)
 	combat = registry.CombatService
+	-- Adapter closures are typed `unknown` at the parameter to exactly match
+	-- TrainingLifecycle.CombatAdapter (kept Roblox-API-free for the
+	-- standalone test runner); the real values passed in here from
+	-- TrainingGroundService's own Player/Model-typed API are always actual
+	-- Roblox Instances, cast back immediately at this one boundary.
 	lifecycle = TrainingLifecycle.new({
-		GetCombatant = function(model: Instance)
+		GetCombatant = function(model: unknown)
 			return combat:GetCombatant(model :: Model)
 		end,
-		GetRuleset = function(player: Instance)
+		GetRuleset = function(player: unknown)
 			return combat:GetRuleset(player :: Player)
 		end,
-		SetRuleset = function(player: Instance, rulesetId: string)
+		SetRuleset = function(player: unknown, rulesetId: string)
 			combat:SetRuleset(player :: Player, rulesetId)
 		end,
-		ResetVitals = function(model: Instance)
+		ResetVitals = function(model: unknown)
 			return combat:ResetVitals(model :: Model)
 		end,
 	})

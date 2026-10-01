@@ -23,21 +23,49 @@
 -- A thin "combat" dependency (SetRuleset/ResetVitals/GetRuleset/
 -- GetCombatant) is injected so tests can supply a fake without any Roblox
 -- services; TrainingGroundService injects the real CombatService.
+--
+-- Dual-environment load (production correction): this module is required
+-- both by Roblox (TrainingGroundService.luau, via `script.Parent`) and by
+-- the standalone Luau test runner (`tests/run.luau`, via the Luau CLI's
+-- path-based `require("../src/...")`), which has no `script` global at all.
+-- Referencing the undefined global `script` itself is safe in plain Luau
+-- (globals that were never assigned simply read as nil); only *indexing*
+-- a nil `script` (e.g. `script.Parent`) would error. So the require below
+-- branches on that, instead of duplicating TrainingSession's logic or
+-- maintaining a second copy for tests.
+local TrainingSession
+if script then
+	TrainingSession = require(script.Parent.TrainingSession)
+else
+	TrainingSession = require("./TrainingSession")
+end
 
-local TrainingSession = require(script.Parent.TrainingSession)
+-- Keys used by this module (player, character) are opaque identities: in
+-- Roblox they are real Player/Model instances; in tests they may be plain
+-- fake tables. Either way they must never be converted to a display name or
+-- `tostring`-ed for use as a table key: two different players can share a
+-- display Name (or a renamed-mid-session Player keeps the same identity but
+-- a different Name), and `tostring` on a Roblox Instance returns its Name,
+-- not a stable unique id. All bookkeeping below is therefore keyed by the
+-- player/character value itself (object identity), exactly like
+-- CombatService's own byPlayer/playerRuleset tables. This module has no
+-- Roblox-only `Instance` type dependency: identities are typed `unknown` so
+-- the module stays loadable where tests pass in plain fake tables.
+export type PlayerId = unknown
+export type CharacterId = unknown
 
 export type CombatAdapter = {
-	GetCombatant: (model: Instance) -> { Alive: boolean }?,
-	GetRuleset: (player: Instance) -> string,
-	SetRuleset: (player: Instance, rulesetId: string) -> (),
-	ResetVitals: (model: Instance) -> boolean,
+	GetCombatant: (model: CharacterId) -> { Alive: boolean }?,
+	GetRuleset: (player: PlayerId) -> string,
+	SetRuleset: (player: PlayerId, rulesetId: string) -> (),
+	ResetVitals: (model: CharacterId) -> boolean,
 }
 
 export type Lifecycle = {
 	_session: TrainingSession.Session,
 	_combat: CombatAdapter,
-	_generation: { [Instance]: Instance }, -- player -> character that currently owns any session
-	_departed: { [Instance]: boolean },
+	_generation: { [PlayerId]: CharacterId }, -- player -> character that currently owns any session
+	_departed: { [PlayerId]: boolean }, -- weak-keyed: see Lifecycle.new
 }
 
 local TrainingLifecycle = {}
@@ -50,16 +78,21 @@ function TrainingLifecycle.new(combat: CombatAdapter): Lifecycle
 		_session = TrainingSession.new(),
 		_combat = combat,
 		_generation = {},
-		_departed = {},
+		-- Weak-keyed tombstone set: once a Player object becomes otherwise
+		-- unreferenced (normal Roblox teardown after disconnect), this entry
+		-- can be collected instead of retaining every departed Player for
+		-- the lifetime of the server. A departed id is only ever consulted
+		-- while callbacks for that same player instance could still be in
+		-- flight (shortly after PlayerRemoving); once nothing else holds the
+		-- instance, there is nothing left that could call back in, so
+		-- collection is safe. `__mode = "k"` works for both Roblox Instances
+		-- and plain tables used as fake ids in tests.
+		_departed = setmetatable({}, { __mode = "k" }) :: any,
 	}, TrainingLifecycle) :: any
 end
 
-local function id(player: Instance): string
-	return tostring(player)
-end
-
-function TrainingLifecycle.IsTraining(self: Lifecycle, player: Instance): boolean
-	return self._session:IsTraining(id(player))
+function TrainingLifecycle.IsTraining(self: Lifecycle, player: PlayerId): boolean
+	return self._session:IsTraining(player)
 end
 
 -- Entry requires: player has not departed, has a character, and the
@@ -69,7 +102,7 @@ end
 -- entered becomes the one and only owner of the session (its "generation"),
 -- so a later removal of a *different* (older or already-replaced) character
 -- can never tear this session down.
-function TrainingLifecycle.Enter(self: Lifecycle, player: Instance, character: Instance?): (boolean, string?)
+function TrainingLifecycle.Enter(self: Lifecycle, player: PlayerId, character: CharacterId?): (boolean, string?)
 	if self._departed[player] then
 		return false, "Departed"
 	end
@@ -81,7 +114,7 @@ function TrainingLifecycle.Enter(self: Lifecycle, player: Instance, character: I
 		return false, "NotRegisteredOrDead"
 	end
 
-	local alreadyTraining = self._session:IsTraining(id(player))
+	local alreadyTraining = self._session:IsTraining(player)
 	local priorRuleset = if alreadyTraining then nil else self._combat.GetRuleset(player)
 
 	local resetOk = self._combat.ResetVitals(character)
@@ -90,7 +123,7 @@ function TrainingLifecycle.Enter(self: Lifecycle, player: Instance, character: I
 	end
 
 	if not alreadyTraining then
-		self._session:Enter(id(player), priorRuleset :: string)
+		self._session:Enter(player, priorRuleset :: string)
 	end
 	-- Rebind ownership to the character that is entering right now, even if
 	-- this is a re-entry under the same session: only the current character
@@ -104,8 +137,8 @@ end
 -- (in which case restoring would recreate state CombatService just tore
 -- down). Always clears local bookkeeping regardless of departed state so no
 -- stale generation/membership can linger.
-local function restore(self: Lifecycle, player: Instance): (boolean, string?)
-	local priorRuleset = self._session:Exit(id(player))
+local function restore(self: Lifecycle, player: PlayerId): (boolean, string?)
+	local priorRuleset = self._session:Exit(player)
 	self._generation[player] = nil
 	if priorRuleset == nil then
 		return false, "NotTraining"
@@ -119,15 +152,23 @@ local function restore(self: Lifecycle, player: Instance): (boolean, string?)
 end
 
 -- Manual/zone exit: also resets vitals so no temporary state leaks back to
--- the normal world. No-op (returns false) if the player was not training.
-function TrainingLifecycle.Exit(self: Lifecycle, player: Instance, character: Instance?): (boolean, string?)
-	local wasTraining = self._session:IsTraining(id(player))
+-- the normal world. No-op (returns false, "NotTraining") if the player was
+-- not training. If the ruleset/session cleanup already completed but the
+-- vitals reset itself fails (e.g. the character was removed/unregistered in
+-- the same instant), this reports a distinct "ResetFailed" failure instead
+-- of silently claiming success, while leaving the already-completed
+-- restore/session cleanup in place (it is not safe or necessary to undo).
+function TrainingLifecycle.Exit(self: Lifecycle, player: PlayerId, character: CharacterId?): (boolean, string?)
+	local wasTraining = self._session:IsTraining(player)
 	local ok, why = restore(self, player)
 	if not ok then
 		return false, why
 	end
 	if character and not self._departed[player] then
-		self._combat.ResetVitals(character)
+		local resetOk = self._combat.ResetVitals(character)
+		if not resetOk then
+			return false, "ResetFailed"
+		end
 	end
 	return wasTraining, nil
 end
@@ -137,7 +178,7 @@ end
 -- that owns the current session; a removal callback for an old character
 -- that already lost ownership (because a newer character entered, or the
 -- session was already exited) is a safe no-op.
-function TrainingLifecycle.OnCharacterRemoved(self: Lifecycle, player: Instance, character: Instance)
+function TrainingLifecycle.OnCharacterRemoved(self: Lifecycle, player: PlayerId, character: CharacterId)
 	if self._generation[player] ~= character then
 		return
 	end
@@ -151,10 +192,12 @@ end
 -- takes the no-callback path in `restore`, instead of recreating
 -- playerRuleset after CombatService has already cleared it. Safe to call
 -- more than once (idempotent) and safe regardless of whether CombatService's
--- own PlayerRemoving handler has already run.
-function TrainingLifecycle.OnPlayerRemoving(self: Lifecycle, player: Instance)
+-- own PlayerRemoving handler has already run. `_departed` is weak-keyed (see
+-- Lifecycle.new) so this does not retain the Player object for the whole
+-- server lifetime once nothing else references it.
+function TrainingLifecycle.OnPlayerRemoving(self: Lifecycle, player: PlayerId)
 	self._departed[player] = true
-	self._session:Exit(id(player)) -- drop membership, discard the prior ruleset: never restored for a departed player
+	self._session:Exit(player) -- drop membership, discard the prior ruleset: never restored for a departed player
 	self._generation[player] = nil
 end
 

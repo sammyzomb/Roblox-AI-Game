@@ -1,6 +1,6 @@
 -- Service/integration-level tests for the training-ground lifecycle
 -- orchestration (Task #23 corrective increment, Grok/Technical-Lead defects
--- 1-3). These exercise the actual production module
+-- 1-4). These exercise the actual production module
 -- src/ReplicatedStorage/Shared/Combat/TrainingLifecycle.luau - the same
 -- orchestration logic TrainingGroundService.luau calls from real Player/
 -- CombatService events - through a small fake CombatAdapter, not a second
@@ -12,7 +12,11 @@
 -- The fake adapter plays the role of CombatService: it tracks a registered/
 -- living combatant per character, a current ruleset per player, and records
 -- every SetRuleset call so tests can assert "no SetRuleset happened after
--- departure" - the exact defect being corrected.
+-- departure" - the exact defect being corrected. Identities (player/
+-- character) are opaque `unknown` values, exactly as the production module
+-- expects: most tests use plain strings, but the identity-regression tests
+-- below use plain tables with a `.Name` field to prove membership is keyed
+-- by object identity, never by a display Name/tostring.
 --
 -- Loaded by tests/run.luau, which passes in the shared test helpers.
 
@@ -20,23 +24,23 @@ local TrainingLifecycle = require("../src/ReplicatedStorage/Shared/Combat/Traini
 
 return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 	local function newFakeCombat()
-		local combatants: { [Instance]: { Alive: boolean } } = {}
-		local rulesets: { [Instance]: string } = {}
-		local resetOk: { [Instance]: boolean } = {}
-		local setRulesetLog: { { Player: Instance, Ruleset: string } } = {}
+		local combatants: { [unknown]: { Alive: boolean } } = {}
+		local rulesets: { [unknown]: string } = {}
+		local resetOk: { [unknown]: boolean } = {}
+		local setRulesetLog: { { Player: unknown, Ruleset: string } } = {}
 
 		local adapter: TrainingLifecycle.CombatAdapter = {
-			GetCombatant = function(model: Instance)
+			GetCombatant = function(model: unknown)
 				return combatants[model]
 			end,
-			GetRuleset = function(player: Instance)
+			GetRuleset = function(player: unknown)
 				return rulesets[player] or "PvE"
 			end,
-			SetRuleset = function(player: Instance, rulesetId: string)
+			SetRuleset = function(player: unknown, rulesetId: string)
 				rulesets[player] = rulesetId
 				table.insert(setRulesetLog, { Player = player, Ruleset = rulesetId })
 			end,
-			ResetVitals = function(model: Instance)
+			ResetVitals = function(model: unknown)
 				if resetOk[model] == nil then
 					return combatants[model] ~= nil and combatants[model].Alive
 				end
@@ -46,21 +50,21 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 
 		return {
 			Adapter = adapter,
-			Register = function(character: Instance, alive: boolean?)
+			Register = function(character: unknown, alive: boolean?)
 				combatants[character] = { Alive = if alive == nil then true else alive }
 			end,
-			Kill = function(character: Instance)
+			Kill = function(character: unknown)
 				if combatants[character] then
 					combatants[character].Alive = false
 				end
 			end,
-			SetResetWillFail = function(character: Instance, willFail: boolean)
+			SetResetWillFail = function(character: unknown, willFail: boolean)
 				resetOk[character] = not willFail
 			end,
-			RulesetOf = function(player: Instance)
+			RulesetOf = function(player: unknown)
 				return rulesets[player]
 			end,
-			SetRulesetCallsFor = function(player: Instance): number
+			SetRulesetCallsFor = function(player: unknown): number
 				local n = 0
 				for _, entry in setRulesetLog do
 					if entry.Player == player then
@@ -263,5 +267,118 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		-- A removal callback after the final exit must be a safe no-op.
 		lifecycle:OnCharacterRemoved(player, character)
 		eq(lifecycle:IsTraining(player), false)
+	end)
+
+	-- Identity regressions (Technical Lead correction #2): membership must be
+	-- keyed by object identity, never by a display Name / tostring. Fake
+	-- "Player" objects here are plain tables with a mutable .Name field,
+	-- mirroring how a real Roblox Player exposes Name without it being a
+	-- stable or unique key.
+	test("two distinct players sharing the same display Name have fully isolated sessions", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local playerA = { Name = "Rookie" }
+		local playerB = { Name = "Rookie" } -- same display name, distinct identity
+		local charA, charB = { Name = "Char" }, { Name = "Char" }
+		fake.Register(charA, true)
+		fake.Register(charB, true)
+
+		local okA = lifecycle:Enter(playerA, charA)
+		eq(okA, true, "player A enters")
+		eq(lifecycle:IsTraining(playerB), false, "player B must not appear trained via shared Name")
+
+		local okB = lifecycle:Enter(playerB, charB)
+		eq(okB, true, "player B enters independently")
+		eq(lifecycle:IsTraining(playerA), true, "player A membership untouched by B's entry")
+		eq(lifecycle:IsTraining(playerB), true)
+
+		-- Exiting one must not affect the other.
+		lifecycle:Exit(playerA, charA)
+		eq(lifecycle:IsTraining(playerA), false)
+		eq(lifecycle:IsTraining(playerB), true, "B still training after A's independent exit")
+	end)
+
+	test("renaming a player mid-session does not lose or merge its session", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player = { Name = "Before" }
+		local character = { Name = "Char" }
+		fake.Register(character, true)
+
+		eq(lifecycle:Enter(player, character), true)
+		eq(lifecycle:IsTraining(player), true)
+
+		-- Rename, as a real Player's .Name can change mid-session.
+		player.Name = "After"
+		eq(lifecycle:IsTraining(player), true, "session survives a Name change (keyed by identity, not Name)")
+
+		local ok = lifecycle:Exit(player, character)
+		eq(ok, true, "exit still works after rename")
+		eq(lifecycle:IsTraining(player), false)
+	end)
+
+	test("reconnect as a new player object is fully isolated from the old, departed one", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local firstSession = { Name = "Same" }
+		local character1 = { Name = "Char" }
+		fake.Register(character1, true)
+
+		eq(lifecycle:Enter(firstSession, character1), true)
+		lifecycle:OnPlayerRemoving(firstSession) -- disconnect
+
+		-- A reconnect creates a brand-new Player instance even if the Name
+		-- is identical; it must not inherit departed/generation state from
+		-- the old object, and must be able to enter training fresh.
+		local secondSession = { Name = "Same" }
+		local character2 = { Name = "Char" }
+		fake.Register(character2, true)
+
+		eq(lifecycle:IsTraining(secondSession), false, "new object starts with no membership")
+		local ok, why = lifecycle:Enter(secondSession, character2)
+		eq(ok, true, "new object is not treated as departed")
+		eq(why, nil)
+		eq(lifecycle:IsTraining(secondSession), true)
+
+		-- The old, departed object must still reject entry.
+		local oldOk, oldWhy = lifecycle:Enter(firstSession, character1)
+		eq(oldOk, false, "old departed object still rejected")
+		eq(oldWhy, "Departed")
+	end)
+
+	-- Reset-failure regression (Technical Lead correction #4): Exit must
+	-- report a distinct failure when the post-restore vitals reset fails,
+	-- instead of unconditionally reporting success.
+	test("Exit reports ResetFailed when vitals reset fails after a successful restore", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+
+		eq(lifecycle:Enter(player, character), true)
+		eq(fake.RulesetOf(player), "Training")
+
+		-- Simulate the character becoming unavailable for a vitals reset
+		-- (e.g. removed/unregistered) right at Exit time, after the
+		-- ruleset/session restore logic has already completed.
+		fake.SetResetWillFail(character, true)
+		local logIndex = fake.LogLength()
+
+		local ok, why = lifecycle:Exit(player, character)
+		eq(ok, false, "Exit must not report success when the reset fails")
+		eq(why, "ResetFailed")
+
+		-- The ruleset restore itself must still have happened and must not
+		-- be re-attempted or undone: session/ownership cleanup is already
+		-- complete and safe, and is not rolled back by a reset failure.
+		eq(lifecycle:IsTraining(player), false, "session cleanup still completed")
+		eq(#fake.SetRulesetLogAfter(logIndex), 1, "ruleset was restored exactly once despite reset failure")
+		eq(fake.RulesetOf(player), "PvE", "prior ruleset was restored")
+
+		-- Idempotent: calling Exit again now is a safe NotTraining no-op,
+		-- not a repeated ResetFailed.
+		local ok2, why2 = lifecycle:Exit(player, character)
+		eq(ok2, false)
+		eq(why2, "NotTraining")
 	end)
 end
