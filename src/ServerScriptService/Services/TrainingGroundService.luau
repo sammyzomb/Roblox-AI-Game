@@ -1,5 +1,5 @@
 --!strict
--- Increment A (+ correction pass) of Task #23 (training ground first
+-- Increment A (+ corrective pass) of Task #23 (training ground first
 -- playable slice).
 --
 -- Owns only: player entry/exit into the training area, temporary session
@@ -7,22 +7,28 @@
 -- Everything else in the full #23 spec (attack dummies with server damage
 -- display, timed practice source, training potions, class presets, rifles /
 -- shields) is OUT OF SCOPE for this increment and is not implemented here.
+-- Scene hookup (actual entrance/exit zone parts in a published place) is
+-- explicitly deferred to the next increment; CollectionService tag wiring
+-- below is idle until a map provides tagged parts.
 --
 -- Design constraints this file must satisfy:
 --   * No second combat core: all damage/ruleset logic stays in CombatCore /
---     CombatService. This service only toggles ruleset + resets vitals,
---     using the shared pure TrainingSession state machine for bookkeeping.
+--     CombatService. This service only toggles ruleset + resets vitals.
 --   * No persistent-data writes: PlayerDataService is never called from
 --     here, in either direction. Training is purely an in-memory session.
---   * Restores the player's *actual prior* ruleset (not a hardcoded "PvE")
---     on exit, death, CharacterRemoving, and disconnect, so a player who was
---     e.g. already in a "PvP" arena ruleset before wandering into training
---     is put back the way they were, not force-switched to PvE.
---   * Enter requires a registered, living combatant and a successful vitals
---     reset BEFORE the session is allowed to claim training membership.
---   * Safe repeat entry/exit and disconnect: a player who enters, leaves,
---     re-enters, dies inside, or disconnects mid-session must never end up
---     with leftover Training ruleset state or partially-applied resets.
+--   * Lifecycle correctness (the subject of this corrective increment) is
+--     delegated to the Roblox-API-free TrainingLifecycle module so the exact
+--     rules are unit-tested against the real production logic, not a copy:
+--       - Enter rejects a departed player, a missing character, or a
+--         character that is not a registered, living combatant; vitals are
+--         reset BEFORE training membership is claimed.
+--       - Only the character that most recently entered owns the session
+--         ("generation"); a removal callback for an older/already-replaced
+--         character can never clear a newer session.
+--       - Once a player has disconnected (PlayerRemoving), no later
+--         callback (delayed CharacterRemoving, a race with CombatService's
+--         own PlayerRemoving handler, repeated calls) can call back into
+--         CombatService:SetRuleset and recreate ruleset state for them.
 --
 -- World hookup (data-driven, no scripting required per zone):
 --   Tag a Part (or the whole region trigger) in Workspace with
@@ -41,7 +47,7 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TrainingSession = require(ReplicatedStorage.Shared.Combat.TrainingSession)
+local TrainingLifecycle = require(ReplicatedStorage.Shared.Combat.TrainingLifecycle)
 
 local TrainingGroundService = {
 	Priority = 20, -- after CombatService (0) and TrainingDummyService (10)
@@ -51,19 +57,12 @@ local ENTRANCE_TAG = "TrainingEntrance"
 local EXIT_TAG = "TrainingExit"
 local EXIT_SPAWN_TAG = "TrainingReturnSpawn" -- optional BasePart; world entry point on exit
 local TOUCH_DEBOUNCE = 1 -- seconds, per player per trigger kind
-local TRAINING_RULESET = "Training"
 
 local combat: any -- CombatService, resolved in Init
+local lifecycle: TrainingLifecycle.Lifecycle
 
--- Session bookkeeping lives in the shared pure module (unit-tested directly
--- in tests/training_ground_spec.luau against this same module, not a copy).
-local session = TrainingSession.new()
 local lastTouch: { [Player]: { Enter: number, Exit: number } } = {}
-local characterConnections: { [Player]: { RBXScriptConnection } } = {}
-
-local function playerId(player: Player): string
-	return tostring(player.UserId)
-end
+local playerConnections: { [Player]: { RBXScriptConnection } } = {}
 
 local function now(): number
 	return os.clock()
@@ -93,7 +92,7 @@ local function findTaggedSpawn(tag: string): BasePart?
 end
 
 function TrainingGroundService:IsTraining(player: Player): boolean
-	return session:IsTraining(playerId(player))
+	return lifecycle:IsTraining(player)
 end
 
 -- Resets only HP/MP/Stamina (the combat vitals). Does not change ruleset or
@@ -106,62 +105,23 @@ function TrainingGroundService:ResetSupplies(player: Player): boolean
 	return combat:ResetVitals(character)
 end
 
--- Enters the training ground: requires a registered, living combatant;
--- resets vitals FIRST, and only claims training membership (and switches
--- the ruleset) once that reset succeeds. Captures the player's current
--- ruleset so Exit/death/disconnect can restore it exactly, instead of
--- assuming "PvE". Idempotent: entering while already training just
--- refreshes the reset and leaves the originally captured prior ruleset
--- untouched.
+-- Enters the training ground: delegates all admission/ownership rules to
+-- TrainingLifecycle (see module header). Idempotent re-entry refreshes the
+-- reset and keeps the originally captured prior ruleset.
 function TrainingGroundService:Enter(player: Player): (boolean, string?)
-	local character = player.Character
-	if character == nil then
-		return false, "NoCharacter"
-	end
-	local combatant = combat:GetCombatant(character)
-	if combatant == nil or not combatant.Alive then
-		return false, "NotRegisteredOrDead"
-	end
-
-	local alreadyTraining = session:IsTraining(playerId(player))
-	local priorRuleset = if alreadyTraining then nil else combat:GetRuleset(player)
-
-	-- Reset BEFORE claiming training membership: if this somehow fails
-	-- (e.g. race with death/unregister), do not leave the player flagged
-	-- as training with a stale ruleset.
-	local resetOk = combat:ResetVitals(character)
-	if not resetOk then
-		return false, "ResetFailed"
-	end
-
-	if not alreadyTraining then
-		session:Enter(playerId(player), priorRuleset :: string)
-	end
-	combat:SetRuleset(player, TRAINING_RULESET)
-	return true, nil
+	return lifecycle:Enter(player, player.Character)
 end
 
-local function restoreRuleset(player: Player, priorRuleset: string?)
-	if priorRuleset == nil then
-		return
-	end
-	combat:SetRuleset(player, priorRuleset)
-end
-
--- Exits the training ground: restores the player's *actual prior* ruleset
--- (captured on Enter) and resets vitals again so no temporary training
--- buff/debuff or resource state leaks back into the normal world. Safe to
--- call even if the player already left (e.g. via death cleanup racing a
--- manual exit trigger).
+-- Exits the training ground: restores the player's actual prior ruleset and
+-- resets vitals again so no temporary training state leaks back into the
+-- normal world. Safe to call even if the player already left.
 function TrainingGroundService:Exit(player: Player): (boolean, string?)
-	local priorRuleset = session:Exit(playerId(player))
-	if priorRuleset == nil then
-		return false, "NotTraining"
+	local ok, why = lifecycle:Exit(player, player.Character)
+	if not ok then
+		return false, why
 	end
-	restoreRuleset(player, priorRuleset)
 	local character = player.Character
 	if character then
-		combat:ResetVitals(character)
 		local spawn = findTaggedSpawn(EXIT_SPAWN_TAG)
 		local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if spawn and root then
@@ -207,55 +167,53 @@ local function hookZonePart(instance: Instance, handler: (BasePart) -> ())
 	end
 end
 
--- Clears training membership and restores the prior ruleset without any
--- character/vitals work, for paths (CharacterRemoving, disconnect) where the
--- old Model/Humanoid may already be gone or on the way out.
-local function forceExit(player: Player)
-	local priorRuleset = session:Exit(playerId(player))
-	if priorRuleset then
-		restoreRuleset(player, priorRuleset)
-	end
-end
-
-local function disconnectCharacterListeners(player: Player)
-	local connections = characterConnections[player]
+local function disconnectPlayerListeners(player: Player)
+	local connections = playerConnections[player]
 	if connections then
 		for _, connection in connections do
 			connection:Disconnect()
 		end
-		characterConnections[player] = nil
+		playerConnections[player] = nil
 	end
 end
 
--- Hooks CharacterRemoving for a player so that death or respawn while
--- training always restores the prior ruleset instead of merely clearing a
--- flag (the prior bug: Training survived respawn because only the flag was
--- cleared and the *new* character re-read playerRuleset, which was never
--- reset away from "Training"). Safe to call multiple times per player; old
--- listeners are disconnected first.
-local function hookCharacterRemoving(player: Player)
-	disconnectCharacterListeners(player)
+-- Hooks the REAL Player.CharacterRemoving/CharacterAdded signals (the prior
+-- version of this file connected a no-op Parent-changed listener and
+-- AncestryChanged instead, which never fired on ordinary death/respawn).
+-- CharacterRemoving still has the removed character as its argument, so it
+-- is passed straight to TrainingLifecycle:OnCharacterRemoved, which only
+-- acts if that exact character still owns the current session - a stale
+-- callback for an old character can never clear a newer one. Connections
+-- are tracked per player and fully torn down on disconnect.
+local function hookPlayer(player: Player)
+	disconnectPlayerListeners(player)
 	local connections: { RBXScriptConnection } = {}
-	characterConnections[player] = connections
-	local character = player.Character
-	if character then
-		table.insert(
-			connections,
-			character:GetPropertyChangedSignal("Parent"):Connect(function() end)
-		)
-		table.insert(
-			connections,
-			character.AncestryChanged:Connect(function(_, parent)
-				if parent == nil and TrainingGroundService:IsTraining(player) then
-					forceExit(player)
-				end
-			end)
-		)
-	end
+	playerConnections[player] = connections
+
+	table.insert(
+		connections,
+		player.CharacterRemoving:Connect(function(character: Model)
+			lifecycle:OnCharacterRemoved(player, character)
+		end)
+	)
 end
 
 function TrainingGroundService:Init(registry)
 	combat = registry.CombatService
+	lifecycle = TrainingLifecycle.new({
+		GetCombatant = function(model: Instance)
+			return combat:GetCombatant(model :: Model)
+		end,
+		GetRuleset = function(player: Instance)
+			return combat:GetRuleset(player :: Player)
+		end,
+		SetRuleset = function(player: Instance, rulesetId: string)
+			combat:SetRuleset(player :: Player, rulesetId)
+		end,
+		ResetVitals = function(model: Instance)
+			return combat:ResetVitals(model :: Model)
+		end,
+	})
 	combat:SetTrainingPredicate(function(player: Player): boolean
 		return TrainingGroundService:IsTraining(player)
 	end)
@@ -277,38 +235,33 @@ function TrainingGroundService:Start()
 	end)
 
 	-- Death inside the training ground must restore the prior ruleset, not
-	-- just clear the flag: the respawned character reads whatever ruleset
-	-- CombatService currently has stored for the player, so if that is left
-	-- as "Training" the new character silently stays in training rules.
+	-- just clear the flag. CharacterRemoving (hooked below) also covers this
+	-- for the common case; Killed is kept as a second, idempotent path since
+	-- it carries the exact victim model and may fire before CharacterRemoving
+	-- in some teardown orders.
 	combat.Killed:Connect(function(victimModel: Model)
 		local player = Players:GetPlayerFromCharacter(victimModel)
-		if player and TrainingGroundService:IsTraining(player) then
-			forceExit(player)
+		if player then
+			lifecycle:OnCharacterRemoved(player, victimModel)
 		end
 	end)
 
-	-- Track CharacterRemoving per player (covers death-without-Killed-event
-	-- edge cases, and respawn/teleport) so training never survives past the
-	-- character that was actually in the zone. Handles both already-present
-	-- players and ones who join later.
-	local function onPlayerAdded(player: Player)
-		hookCharacterRemoving(player)
-		player.CharacterAdded:Connect(function()
-			hookCharacterRemoving(player)
-		end)
-	end
-	Players.PlayerAdded:Connect(onPlayerAdded)
+	Players.PlayerAdded:Connect(hookPlayer)
 	for _, player in Players:GetPlayers() do
-		onPlayerAdded(player)
+		hookPlayer(player)
 	end
 
-	-- Disconnect cleanup: no persistent writes ever happened, so all that is
-	-- needed is dropping the in-memory flags to avoid leaking session state,
-	-- and restoring the prior ruleset in case CombatService keeps the
-	-- playerRuleset entry alive for any reason during teardown ordering.
+	-- Disconnect cleanup: mark the player departed in TrainingLifecycle
+	-- FIRST (before disconnecting listeners), so any already-queued or
+	-- in-flight callback (delayed CharacterRemoving, a Killed event racing
+	-- disconnect) sees the departed flag and takes the no-op-restore path
+	-- instead of calling CombatService:SetRuleset after CombatService's own
+	-- PlayerRemoving handler has cleared playerRuleset for this player. This
+	-- is correct regardless of which PlayerRemoving handler (this service's
+	-- or CombatService's) happens to run first.
 	Players.PlayerRemoving:Connect(function(player)
-		forceExit(player)
-		disconnectCharacterListeners(player)
+		lifecycle:OnPlayerRemoving(player)
+		disconnectPlayerListeners(player)
 		lastTouch[player] = nil
 	end)
 end
