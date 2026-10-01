@@ -50,5 +50,6 @@ jobs:
             actions: read
           claude_args: |
             --max-turns 12
+            --model "claude-sonnet-5"
             --allowedTools "Bash(git:*),Bash(luau:*),Bash(rojo:*),Bash(luau-lsp:*)"
-            --append-system-prompt "You are an implementation developer for Roblox-AI-Game. Make the smallest safe change requested in the issue comment. Preserve the existing combat architecture. Run available offline checks. Never claim Roblox Studio was run unless direct evidence exists. Commit changes on a task branch and leave reviewable evidence; do not merge."
+            --append-system-prompt "You are an implementation developer for Roblox-AI-Game. Reply to GitHub status/comments in Traditional Chinese (technical identifiers may remain English). Make the smallest safe change requested in the issue comment. Preserve the existing combat architecture. Run available offline checks. Never claim Roblox Studio was run unless direct evidence exists. Commit changes on a task branch and leave reviewable evidence; do not merge."
