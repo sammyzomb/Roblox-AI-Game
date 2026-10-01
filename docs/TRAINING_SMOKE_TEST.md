@@ -1,4 +1,34 @@
-# Training Ground Smoke Test (Task #23, Increment A)
+# Training Ground Smoke Test (Task #23, Increment A + correction pass)
+
+## Correction pass (this assignment)
+
+Fixed actual lifecycle/isolation defects found in the prior increment:
+- `TrainingGroundService` no longer hardcodes `PvE` on exit/death/disconnect;
+  it now captures the player's actual ruleset at Enter time (via the new
+  `CombatService:GetRuleset`) in a shared pure `TrainingSession` module
+  (`src/ReplicatedStorage/Shared/Combat/TrainingSession.luau`) and restores
+  that exact value.
+- `CombatService.onCharacterAdded` no longer blindly reuses
+  `playerRuleset[player]`: if it is somehow still `"Training"` when a new
+  character spawns (race with death cleanup), it falls back to the
+  configured default instead of silently keeping the new character in
+  training rules.
+- `TrainingGroundService:Enter` now requires a registered, living combatant
+  (`CombatService:GetCombatant`) and a successful `ResetVitals` call BEFORE
+  claiming training membership; it no longer flags a player as training on a
+  bare `player.Character ~= nil` check.
+- Death now goes through the same prior-ruleset restoration as a manual
+  Exit (`forceExit`), not just a flag clear, closing the "Training survives
+  respawn" defect.
+- `CombatService:onUseItem` / `onEquip` now reject with a clear reason
+  (`TrainingNoPersistentUse` / `TrainingNoPersistentEquip`) whenever
+  `CombatService:SetTrainingPredicate`'s predicate (wired to
+  `TrainingGroundService:IsTraining`) returns true, so persistent
+  stock/loadout cannot be mutated by a raw remote call during training even
+  though no training UI currently sends those requests.
+- `tests/training_ground_spec.luau` now requires and exercises the actual
+  production module (`TrainingSession.luau`) instead of a re-implemented
+  copy of the state machine.
 
 Status: **NOT YET RUN IN STUDIO.** No shell/Studio/Rojo tool was available in
 this session. This document is the reproducible operation sheet required by
@@ -25,14 +55,23 @@ Explicitly OUT of scope for this increment (still open from #23):
 - Rifle weapon / shield practice (depends on base combat data still being
   extended per #23's own dependency note).
 
-## Files touched
+## Files touched (this correction pass)
 
-- `src/ServerScriptService/Services/TrainingGroundService.luau` (new)
-- `src/ServerScriptService/Services/CombatService.luau` (added `ResetVitals`)
-- `src/ReplicatedStorage/Shared/Combat/Rulesets.luau` (added `Training` ruleset)
-- `tests/training_ground_spec.luau` (new)
-- `tests/run.luau` (wired the new spec in)
+- `src/ReplicatedStorage/Shared/Combat/TrainingSession.luau` (new: pure
+  session state machine, extracted so the service and tests share one
+  implementation)
+- `src/ServerScriptService/Services/TrainingGroundService.luau` (rewritten:
+  prior-ruleset capture/restore, Enter preconditions, CharacterRemoving /
+  disconnect cleanup via the shared session module)
+- `src/ServerScriptService/Services/CombatService.luau` (added
+  `GetRuleset`, `SetTrainingPredicate`; `onCharacterAdded` no longer trusts a
+  stale `Training` ruleset; `onUseItem`/`onEquip` reject during training)
+- `tests/training_ground_spec.luau` (rewritten to test the real
+  `TrainingSession` module)
 - `docs/TRAINING_SMOKE_TEST.md` (this file)
+
+Unchanged from the prior increment: `Rulesets.luau` (`Training` ruleset
+already existed), `tests/run.luau` wiring.
 
 ## Required world setup (not included — a map/Studio dependency)
 
@@ -95,12 +134,20 @@ dependency/gap, not a hidden failure.**
      inspector is available).
    - Record: Pass/Fail.
 
-6. **Death inside the training zone**
-   - While training, take lethal damage (e.g. repeated dummy hits, or a
-     temporary debug call to zero Health).
-   - Expected: character dies and respawns per standard Roblox flow; the new
-     character is not stuck in the `Training` ruleset (default is `PvE` per
-     `CombatService`'s `onCharacterAdded`); no error in Output.
+6. **Death inside the training zone, entered from a non-default ruleset**
+   - Manually set the test player to a non-default ruleset (e.g. call
+     `CombatService:SetRuleset(player, "PvP")` from command bar) then enter
+     training.
+   - While training, take lethal damage.
+   - Expected: after respawn, `CombatService:GetRuleset(player)` reports the
+     ORIGINAL ruleset (`PvP`), not `PvE` and not `Training`; confirm via
+     command bar or a temporary print. No error in Output.
+   - Record: Pass/Fail.
+
+6b. **Repeat check with default ruleset**
+   - Same as step 6 but entering training from the default ruleset.
+   - Expected: after respawn, ruleset is back to the default; no stuck
+     `Training` state.
    - Record: Pass/Fail.
 
 7. **Disconnect mid-session**
@@ -120,6 +167,19 @@ dependency/gap, not a hidden failure.**
      before entry (no potions consumed from real inventory since none are
      implemented yet in this increment; no equipment change).
    - Record: Pass/Fail.
+
+9. **Server-boundary rejection during training (new)**
+   - While training, send a raw `UseItem` and `Equip` `CombatRequest` (e.g.
+     via a temporary client-side debug call, bypassing any UI) for an item
+     the player actually owns.
+   - Expected: `CombatEvent` `Rejected` with reason
+     `TrainingNoPersistentUse` / `TrainingNoPersistentEquip`; saved
+     `Consumables`/`Loadout` unchanged afterward.
+   - Record: Pass/Fail.
+
+Status: Studio-only steps 1-9 remain UNRUN (no Studio/Rojo access in this
+session). Steps 6/6b/9 are new in this correction pass and have no prior
+execution history either.
 
 ## Result template
 
