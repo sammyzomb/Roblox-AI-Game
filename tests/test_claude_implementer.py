@@ -9,6 +9,27 @@ import claude_implementer as runner
 
 
 class ImplementationTests(unittest.TestCase):
+    def test_anthropic_http_error_reason_exposes_only_safe_fields(self):
+        detail = ('HTTP 400 calling https://api.anthropic.com/v1/messages: '
+                  '{"type":"error","error":{"type":"invalid_request_error",'
+                  '"message":"messages: input length exceeds the model context window"}}')
+        reason = runner.anthropic_http_error_reason(detail)
+        self.assertIn("invalid_request_error", reason)
+        self.assertIn("context window", reason)
+
+        secret = ('HTTP 401 calling https://api.anthropic.com/v1/messages: '
+                  '{"error":{"type":"authentication_error",'
+                  '"message":"Bearer sk-ant-private-token"}}')
+        safe = runner.anthropic_http_error_reason(secret)
+        self.assertEqual(safe, "Anthropic HTTP 401; authentication_error")
+        self.assertNotIn("sk-ant", safe)
+
+        malformed = "HTTP 400 calling https://api.anthropic.com/v1/messages: not-json"
+        self.assertEqual(
+            runner.anthropic_http_error_reason(malformed),
+            "Anthropic HTTP 400; inspect API access/model settings",
+        )
+
     @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/game"})
     def test_pr_policy_denial_requires_saved_ref_and_exact_error(self):
         ws = self.workspace()

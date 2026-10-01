@@ -260,6 +260,38 @@ def request_claude(messages, token):
                      payload=payload)
 
 
+def anthropic_http_error_reason(detail):
+    """Return actionable Anthropic error fields without logging raw bodies."""
+    status = re.search(r"HTTP (\\d{3})", detail)
+    generic = (f"Anthropic HTTP {status.group(1)}; inspect API access/model settings"
+               if status else "Anthropic request failed; inspect API access/model settings")
+    match = re.fullmatch(
+        r"HTTP (\\d{3}) calling https://api\\.anthropic\\.com/[^:]+:\\s*(\\{.*\\})",
+        detail,
+        re.S,
+    )
+    if not match:
+        return generic
+    try:
+        body = json.loads(match.group(2))
+    except (TypeError, ValueError):
+        return generic
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return generic
+    kind = error.get("type")
+    message = error.get("message")
+    if not isinstance(kind, str) or not re.fullmatch(r"[a-z0-9_]{1,80}", kind):
+        return generic
+    if not isinstance(message, str):
+        return f"Anthropic HTTP {match.group(1)}; {kind}"
+    message = re.sub(r"\\s+", " ", message).strip()[:500]
+    if (not message or re.search(r"authorization|bearer|api[_ -]?key|secret|token", message, re.I)):
+        return f"Anthropic HTTP {match.group(1)}; {kind}"
+    message = re.sub(r"[A-Za-z0-9_-]{64,}", "[redacted]", message)
+    return f"Anthropic HTTP {match.group(1)}; {kind}: {message}"
+
+
 def comment(number, text):
     github_post(f"/issues/{number}/comments", {"body": text[:59000]})
 
@@ -395,7 +427,8 @@ def main():
             status = re.search(r"HTTP (\d{3})", detail)
             service = "GitHub" if "api.github.com" in detail else "Anthropic"
             if status:
-                reason = f"{service} HTTP {status.group(1)}; inspect API access/model settings"
+                reason = (f"{service} HTTP {status.group(1)}; inspect API access/model settings"
+                          if service == "GitHub" else anthropic_http_error_reason(detail))
             if "not permitted to create or approve pull requests" in detail:
                 reason = "GitHub repository Actions setting blocks PR creation; branch/commit is recorded above"
         print("Implementation blocked: " + reason, file=sys.stderr)
