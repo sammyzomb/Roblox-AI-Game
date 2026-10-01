@@ -1,46 +1,55 @@
 --!strict
--- Task #23 increment: training-scene-bootstrap.
+-- Task #23 increment: fix-training-scene-reachability-ensure-dummy.
 --
--- Creates the smallest server-authored placeholder scene needed for the
--- training ground to be enterable in a FRESH Studio place with no manual
--- level-authoring: a platform, an entrance part tagged "TrainingEntrance",
--- an exit part tagged "TrainingExit", and a return-spawn part tagged
--- "TrainingReturnSpawn" (the exact CollectionService tags
--- TrainingGroundService.luau already listens for — see that file's header).
+-- Creates/repairs the smallest server-authored placeholder scene needed for
+-- the training ground to be enterable in a FRESH Studio place by ordinary
+-- walking: a walkway connecting world origin to a platform, an entrance part
+-- tagged "TrainingEntrance", an exit part tagged "TrainingExit", and a
+-- return-spawn part tagged "TrainingReturnSpawn" (the exact CollectionService
+-- tags TrainingGroundService.luau already listens for — unchanged by this
+-- increment).
 --
--- This service owns ONLY geometry creation/idempotency. It does not
--- duplicate any combat, lifecycle, ruleset, or session logic: once the
--- tagged parts exist, TrainingGroundService's existing CollectionService
--- hookup (Start()) does the rest, unchanged.
+-- This service owns ONLY geometry creation/repair/idempotency. It does not
+-- duplicate any combat, lifecycle, ruleset, or session logic.
 --
--- Idempotency: all geometry lives under one named Folder
--- (TrainingSceneConfig.ContainerName) directly in Workspace. If that folder
--- already exists when :Start() runs, this service does nothing further -
--- no duplicate parts, no duplicate tags, no duplicate connections are ever
--- created on a second boot (e.g. a server restart that did not wipe
--- Workspace, or this service's :Start() somehow running twice in one
--- process). This is a plain existence check, not a signal/connection, so
--- there is nothing to double-connect.
+-- Ownership correction (this increment): the prior version only checked
+-- `Workspace:FindFirstChild(ContainerName)` by NAME and returned immediately,
+-- which (a) could silently "adopt" an unrelated user-placed Folder that
+-- happens to share the name, and (b) never repaired a partially-created or
+-- hand-edited scene (missing a tag, wrong anchoring, etc.) on a later boot.
+-- This version:
+--   1. Finds-or-creates the container by Name AND an owning
+--      `TrainingScene = true` attribute. A same-named Folder WITHOUT that
+--      attribute is treated as an unknown user object: it is never deleted,
+--      renamed, or written into. A warning is printed and this service
+--      leaves it untouched (the training scene simply does not boot until
+--      the collision is resolved by hand), rather than risking destroying
+--      something a user placed.
+--   2. Once an owned container exists (fresh or from a prior boot), each
+--      required child part is ensured individually by deterministic Name:
+--      if missing, it is created; if present AND owned (see below), its
+--      class/anchoring/collision/size/position/attributes/tag are repaired
+--      in place; if present but NOT owned (e.g. a user renamed a plain Part
+--      into the container with a colliding Name), it is left untouched and
+--      a warning is printed, exactly like the container-level collision
+--      case. "Owned" for a child means the instance has the
+--      `TrainingSceneOwned = true` attribute this service itself sets - so a
+--      child this service created on a previous boot is always safely
+--      repairable, while anything else is never touched.
+--   3. Running :Start() twice (duplicate boot in one process, or a second
+--      server start against the same saved Workspace) never duplicates
+--      parts, tags, or connections: every owned child is looked up by Name
+--      under the single owned container and repaired in place, not
+--      recreated.
 --
--- Placeholder-only: parts are plain gray/neutral BaseParts with deterministic
--- Names and Attributes (see below), anchored, non-collaped. No materials,
--- meshes, decals, or other art pass are included, per the assignment's
--- "no art polish or external assets" instruction.
---
--- Dummy reuse (assignment item 3): TrainingDummyService.luau (inspected for
--- this increment) only spawns its Studio-only dummies from a hardcoded
--- Workspace-relative DUMMIES position list inside its own :Start(), gated
--- behind RunService:IsStudio(), with no public method to add/relocate a
--- dummy at an arbitrary world position. It cannot be safely "pointed at"
--- this scene's DummyMarker without editing that service's own DUMMIES table
--- (which would be scene/content work, not bootstrap-layer work, and risks
--- scope creep into a second combat/dummy system if done incorrectly). This
--- increment therefore only reserves and tags a marker Part
--- ("TrainingDummyMarker", informational attribute only, NOT one of the three
--- CollectionService tags TrainingGroundService listens for) at
--- TrainingSceneConfig.DummyMarkerOffset, and documents the exact missing
--- API in docs/TRAINING_SMOKE_TEST.md instead of forking dummy spawning
--- logic here. No dummy Model is created by this service.
+-- Dummy reuse (assignment item 3): TrainingDummyService.luau now spawns one
+-- additional Studio-only dummy at this scene's configured DummyMarker point
+-- (see that file), reusing its existing spawnDummy/CombatNPC/death-respawn
+-- path unchanged. This service still only creates an informational
+-- "TrainingDummyMarker" anchor Part (NOT one of the three CollectionService
+-- tags TrainingGroundService listens for, and not attackable by itself) so
+-- the marker position is visible/inspectable in Explorer independent of
+-- whether a dummy happens to be spawned there in the current environment.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -56,24 +65,174 @@ local function vec(v: TrainingSceneConfig.Vec3): Vector3
 	return Vector3.new(v.X, v.Y, v.Z)
 end
 
-local function makePart(name: string, position: Vector3, size: Vector3, color: Color3): BasePart
-	local part = Instance.new("Part")
-	part.Name = name
+-- Thin marker parts (entrance/exit/return-spawn) are small, walkable, and
+-- visually distinct placeholder colors only so a tester can find them; not
+-- an art deliverable.
+local MARKER_SIZE = Vector3.new(6, 1, 6)
+
+-- Declarative spec for every child this service owns inside the container.
+-- `standY` is the desired WALKABLE surface Y (ground level for that point);
+-- the actual Part center Y is derived via TrainingSceneConfig.restingCenterY
+-- so every part models its own half-height correctly instead of repeating
+-- ad-hoc `- size.Y/2` arithmetic per call site.
+type ChildSpec = {
+	Name: string,
+	Position: Vector3, -- standing-surface position (X/Z exact, Y = standY)
+	Size: Vector3,
+	Color: Color3,
+	CanCollide: boolean,
+	Tag: string?, -- CollectionService tag this part must carry, if any
+	Attributes: { [string]: any }?,
+}
+
+local function buildChildSpecs(points: any): { ChildSpec }
+	local platformSize = vec(TrainingSceneConfig.Platform.Size)
+	local walkwaySize = vec(TrainingSceneConfig.Walkway.Size)
+
+	return {
+		{
+			Name = "TrainingWalkway",
+			Position = Vector3.new(
+				points.WalkwayCenter.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, TrainingSceneConfig.Walkway.Size.Y),
+				points.WalkwayCenter.Z
+			),
+			Size = walkwaySize,
+			Color = Color3.fromRGB(110, 110, 110),
+			CanCollide = true,
+		},
+		{
+			Name = "TrainingPlatform",
+			Position = Vector3.new(
+				points.Origin.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, TrainingSceneConfig.Platform.Size.Y),
+				points.Origin.Z
+			),
+			Size = platformSize,
+			Color = Color3.fromRGB(120, 120, 130),
+			CanCollide = true,
+		},
+		{
+			Name = "TrainingEntrancePad",
+			Position = Vector3.new(
+				points.Entrance.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
+				points.Entrance.Z
+			),
+			Size = MARKER_SIZE,
+			Color = Color3.fromRGB(70, 170, 90),
+			CanCollide = true,
+			Tag = "TrainingEntrance",
+		},
+		{
+			Name = "TrainingExitPad",
+			Position = Vector3.new(
+				points.Exit.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
+				points.Exit.Z
+			),
+			Size = MARKER_SIZE,
+			Color = Color3.fromRGB(170, 90, 70),
+			CanCollide = true,
+			Tag = "TrainingExit",
+		},
+		{
+			Name = "TrainingReturnSpawnPad",
+			Position = Vector3.new(
+				points.ReturnSpawn.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
+				points.ReturnSpawn.Z
+			),
+			Size = MARKER_SIZE,
+			Color = Color3.fromRGB(90, 120, 170),
+			CanCollide = true,
+			Tag = "TrainingReturnSpawn",
+		},
+		{
+			Name = "TrainingDummyMarker",
+			Position = Vector3.new(
+				points.DummyMarker.X,
+				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, 0.2),
+				points.DummyMarker.Z
+			),
+			Size = Vector3.new(3, 0.2, 3),
+			Color = Color3.fromRGB(200, 170, 60),
+			CanCollide = false,
+			Attributes = { Purpose = "ReservedForStationaryDummy" },
+		},
+	}
+end
+
+-- Finds the owned container (Name + TrainingScene attribute), or creates it
+-- fresh if absent. If a same-named instance exists WITHOUT the owning
+-- attribute, it is an unknown user object: never touched, and this function
+-- returns nil (caller aborts the whole bootstrap for safety).
+local function findOrCreateOwnedContainer(): Folder?
+	local existing = Workspace:FindFirstChild(TrainingSceneConfig.ContainerName)
+	if existing then
+		if existing:IsA("Folder") and existing:GetAttribute("TrainingScene") == true then
+			return existing
+		end
+		warn(
+			`[Combat] Training scene bootstrap found an existing "{TrainingSceneConfig.ContainerName}" that is not `
+				.. `an owned TrainingScene container (class={existing.ClassName}); leaving it untouched and skipping `
+				.. `scene bootstrap. Rename/remove the conflicting object to allow bootstrap to run.`
+		)
+		return nil
+	end
+
+	local container = Instance.new("Folder")
+	container.Name = TrainingSceneConfig.ContainerName
+	container:SetAttribute("TrainingScene", true)
+	container:SetAttribute("SceneVersion", TrainingSceneConfig.SceneVersion)
+	container:SetAttribute("Placeholder", true)
+	container.Parent = Workspace
+	return container
+end
+
+-- Ensures exactly one child matching `spec` exists directly under
+-- `container`: creates it if missing, repairs it in place if present and
+-- owned, or leaves an unknown same-name object alone with a warning.
+local function ensureChild(container: Folder, spec: ChildSpec)
+	local existing = container:FindFirstChild(spec.Name)
+	local part: BasePart
+
+	if existing == nil then
+		part = Instance.new("Part")
+		part.Name = spec.Name
+		part:SetAttribute("TrainingSceneOwned", true)
+		part.Parent = container
+	elseif existing:IsA("BasePart") and existing:GetAttribute("TrainingSceneOwned") == true then
+		part = existing
+	else
+		warn(
+			`[Combat] Training scene bootstrap found an unowned object named "{spec.Name}" under `
+				.. `{TrainingSceneConfig.ContainerName}; leaving it unchanged and skipping repair for this child.`
+		)
+		return
+	end
+
 	part.Anchored = true
-	part.CanCollide = true
-	part.Size = size
-	part.Position = position
-	part.Color = color
+	part.CanCollide = spec.CanCollide
+	part.Size = spec.Size
+	part.Position = spec.Position
+	part.Color = spec.Color
 	part.Material = Enum.Material.SmoothPlastic
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
-	return part
-end
 
--- Thin marker parts (entrance/exit/return-spawn) are small, walkable, and
--- visually distinct placeholder colors only so a tester can find them;
--- not an art deliverable.
-local MARKER_SIZE = Vector3.new(6, 1, 6)
+	if spec.Attributes then
+		for key, value in spec.Attributes do
+			part:SetAttribute(key, value)
+		end
+	end
+
+	if spec.Tag then
+		-- AddTag is itself idempotent (adding an already-present tag is a
+		-- no-op), so repeated Start() calls never create duplicate tags.
+		CollectionService:AddTag(part, spec.Tag)
+	end
+end
 
 function TrainingSceneBootstrap:Init(_registry)
 	-- No dependency on other services: this is pure geometry creation and
@@ -82,59 +241,23 @@ function TrainingSceneBootstrap:Init(_registry)
 end
 
 function TrainingSceneBootstrap:Start()
-	if Workspace:FindFirstChild(TrainingSceneConfig.ContainerName) then
-		-- Idempotent: scene already created by a previous boot in this
-		-- Workspace. Do not recreate or re-tag anything.
+	local container = findOrCreateOwnedContainer()
+	if container == nil then
 		return
 	end
 
-	local points = TrainingSceneConfig.resolve()
-
-	local container = Instance.new("Folder")
-	container.Name = TrainingSceneConfig.ContainerName
+	-- Keep attributes in sync even on an owned container from a prior
+	-- boot/version (repair, not just create-once).
+	container:SetAttribute("TrainingScene", true)
 	container:SetAttribute("SceneVersion", TrainingSceneConfig.SceneVersion)
 	container:SetAttribute("Placeholder", true)
 
-	local platform = makePart(
-		"TrainingPlatform",
-		vec(points.Origin) - Vector3.new(0, TrainingSceneConfig.Platform.Size.Y / 2, 0),
-		vec(TrainingSceneConfig.Platform.Size),
-		Color3.fromRGB(120, 120, 130)
-	)
-	platform.Parent = container
+	local points = TrainingSceneConfig.resolve()
+	for _, spec in buildChildSpecs(points) do
+		ensureChild(container, spec)
+	end
 
-	local entrance = makePart("TrainingEntrancePad", vec(points.Entrance), MARKER_SIZE, Color3.fromRGB(70, 170, 90))
-	entrance.Parent = container
-	CollectionService:AddTag(entrance, "TrainingEntrance")
-
-	local exitPad = makePart("TrainingExitPad", vec(points.Exit), MARKER_SIZE, Color3.fromRGB(170, 90, 70))
-	exitPad.Parent = container
-	CollectionService:AddTag(exitPad, "TrainingExit")
-
-	local returnSpawn = makePart(
-		"TrainingReturnSpawnPad",
-		vec(points.ReturnSpawn),
-		MARKER_SIZE,
-		Color3.fromRGB(90, 120, 170)
-	)
-	returnSpawn.Parent = container
-	CollectionService:AddTag(returnSpawn, "TrainingReturnSpawn")
-
-	-- Informational-only marker: NOT one of TrainingGroundService's tags.
-	-- See this file's header ("Dummy reuse") for why no dummy is spawned
-	-- here yet.
-	local dummyMarker = makePart(
-		"TrainingDummyMarker",
-		vec(points.DummyMarker),
-		Vector3.new(3, 0.2, 3),
-		Color3.fromRGB(200, 170, 60)
-	)
-	dummyMarker.CanCollide = false
-	dummyMarker:SetAttribute("Purpose", "ReservedForStationaryDummy")
-	dummyMarker.Parent = container
-
-	container.Parent = Workspace
-	print(`[Combat] Training scene bootstrap created "{TrainingSceneConfig.ContainerName}" placeholder geometry`)
+	print(`[Combat] Training scene bootstrap ensured "{TrainingSceneConfig.ContainerName}" placeholder geometry`)
 end
 
 return TrainingSceneBootstrap

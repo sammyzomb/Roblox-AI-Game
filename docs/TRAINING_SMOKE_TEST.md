@@ -1,6 +1,142 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
-## Third pass (this assignment: training-scene-bootstrap)
+## Fourth pass (this assignment: fix-training-scene-reachability-ensure-dummy)
+
+Bounded correctness pass on top of the third pass below, per Technical
+Lead's reconciliation of Grok comment 5932757764. Scope is exactly the four
+items in the assignment; lifecycle/combat core/other #23 features are
+unchanged.
+
+1. **Walkable fresh-place entry and world return (geometry rewrite).**
+   `TrainingSceneConfig.luau` no longer places the scene on a platform
+   floating at `Y=10` with no connection to ground level. Every walkable
+   point (`Entrance`, `Exit`, `ReturnSpawn`, `DummyMarker`, the new
+   `WalkwayCenter`, and `Origin` itself) now resolves at one shared
+   `GroundLevelY = 0`, matching a fresh Baseplate/default-spawn standing
+   surface. A new `Walkway` strip spans from near world origin (its near
+   edge resolves to X=0) to several studs *inside* the platform footprint
+   (`boxesOverlap` asserted true in tests), so there is a continuous walkable
+   surface with no jump/gap. `TrainingReturnSpawnPad` now resolves onto that
+   world-side walkway (X=12 in the default config), clear of both the
+   platform footprint and a representative default-spawn footprint, instead
+   of floating in training-local air. A new pure `restingCenterY(standY,
+   fullHeightY)` helper centralizes the half-height math (part center =
+   desired top-surface Y minus half the part's own height) so every part in
+   `TrainingSceneBootstrap.luau` models its own thickness correctly instead
+   of ad-hoc per-callsite arithmetic. Exact CollectionService tags
+   (`TrainingEntrance`, `TrainingExit`, `TrainingReturnSpawn`) are unchanged;
+   only the geometry moved.
+2. **Owned ensure/repair, not name-only early return.**
+   `TrainingSceneBootstrap.luau` no longer returns early on a bare
+   `Workspace:FindFirstChild(ContainerName)` name check. It now finds-or-
+   creates the container by Name AND a `TrainingScene = true` attribute; a
+   same-named object without that attribute is treated as an unknown
+   user-owned object, left completely untouched, and a `warn()` is printed
+   instead of adopting/overwriting it. Each of the six required children
+   (`TrainingWalkway`, `TrainingPlatform`, `TrainingEntrancePad`,
+   `TrainingExitPad`, `TrainingReturnSpawnPad`, `TrainingDummyMarker`) is now
+   ensured individually by deterministic Name: created if missing; repaired
+   in place (anchored/collision/size/position/color/attributes/tag) if
+   present and marked `TrainingSceneOwned = true` by this service; left
+   untouched with a warning if present but not owned. `CollectionService:
+   AddTag` is itself idempotent, so repeated `:Start()` calls never create
+   duplicate tags, parts, or connections.
+3. **Scene dummy reuse.** `TrainingDummyService.luau` now also spawns one
+   additional dummy at `TrainingSceneConfig.resolve().DummyMarker` (+3 studs
+   Y, matching the stand-height convention of the other `DUMMIES` entries),
+   through the exact same existing `spawnDummy` / `CombatNPC` tag /
+   death-respawn tracking used by every other dummy, still gated by
+   `RunService:IsStudio()`. No second dummy/combat system was added, and
+   live-server dummy spawning remains disabled. The `TrainingDummyMarker`
+   part created by the bootstrap service remains a debug anchor only; it is
+   not tagged as attackable and this document does not claim it is.
+4. **Tests.** `tests/training_scene_config_spec.luau` was rewritten with
+   assertions that fail against the prior floating-platform layout:
+   shared-ground-level check (`Origin.Y`/every point's `Y` must equal
+   `GroundLevelY`), walkway/platform overlap (`boxesOverlap`), walkway
+   near-edge reachability (`<= 20` studs from world origin), return-spawn
+   clear of both the platform and a default-spawn footprint, and the new
+   `restingCenterY` half-height formula. `TrainingSceneConfig.luau` remains
+   fully Roblox-API-free (no `script`, `Instance`, `Vector3`, or other
+   datatype) so it still loads under the standalone Luau test runner.
+   `TrainingSceneBootstrap.luau`'s ensure/repair logic itself uses `Instance`/
+   `Vector3`/`Color3` (it creates real Workspace parts) and is therefore not
+   separable into the pure runner; it is covered by the fresh-place and
+   repeated-boot Studio steps below instead, same as the rest of this
+   service's Roblox-only logic in prior passes.
+
+### Tests actually run this pass
+
+Command: `luau tests/run.luau` (see "Tests actually run" note below this
+line for environment availability) — **not run**: no shell/Luau CLI/Rojo
+tool was available in this session (consistent with every prior pass in
+this file). The new and revised assertions above were checked by hand
+against the module's own arithmetic (shown in the PR/commit description),
+not by executing the runner. This is explicitly reported as unrun, not
+claimed as passing.
+
+### Fresh-place Studio steps (NOT YET RUN — see Status below, supersedes third-pass steps)
+
+1. Create a brand-new Baseplate (or any place with a default `SpawnLocation`
+   near world origin) in Studio. Do not hand-place any training parts.
+2. Sync/publish this branch's `src/` into the place (Rojo) and start a Play
+   Solo session on the recorded commit SHA.
+3. In Output, confirm `[Server] booted N module(s)` with no errors, and
+   confirm the line
+   `[Combat] Training scene bootstrap ensured "TrainingGroundScene" placeholder geometry`
+   appears exactly once, and (Studio only) `[Combat] Studio training dummies spawned`.
+4. In Explorer, confirm `Workspace.TrainingGroundScene` contains
+   `TrainingWalkway`, `TrainingPlatform`, `TrainingEntrancePad`,
+   `TrainingExitPad`, `TrainingReturnSpawnPad`, `TrainingDummyMarker`, each
+   with `TrainingSceneOwned = true`, and that the three pad parts carry
+   their respective `TrainingEntrance` / `TrainingExit` /
+   `TrainingReturnSpawn` CollectionService tags.
+5. **Walkability check (this pass's core fix):** starting from the default
+   `SpawnLocation`, walk in a straight line toward `TrainingWalkway` /
+   `TrainingPlatform` with NO jump input. Confirm the character never falls
+   through a gap, never needs to jump a ledge, and smoothly transitions from
+   baseplate ground onto the walkway and onto the platform at the same
+   height.
+6. Confirm `TrainingReturnSpawnPad` sits on the world-side walkway, visibly
+   separate from the default `SpawnLocation` (not overlapping it) and not on
+   the training platform itself.
+7. Stop and restart Play Solo (same place, same session) and repeat steps
+   3-4: confirm the boot line still prints exactly once per boot and no
+   duplicate `TrainingGroundScene` Folder, children, or tags are created
+   (child count under the Folder stays exactly 6).
+8. **Collision-safety check (new):** before starting Play Solo, manually
+   create a plain unrelated `Part` named `TrainingGroundScene` directly in
+   Workspace (simulating an unrelated user object). Start Play Solo and
+   confirm Output shows the `warn()` from `findOrCreateOwnedContainer`
+   (".. not an owned TrainingScene container .. leaving it untouched ..")
+   and that the manually-created Part is NOT deleted, renamed, or
+   re-parented, and no training children are created under it.
+9. Walk onto `TrainingEntrancePad`: confirm `TrainingGroundService:Enter`
+   behavior from prior passes (vitals reset, ruleset switched to
+   `Training`) still fires against the real tagged part.
+10. Walk onto `TrainingExitPad`: confirm `Exit` behavior (prior ruleset
+    restored, vitals reset) and the character is moved to
+    `TrainingReturnSpawnPad`'s position.
+11. (Studio only) Confirm a `TrainingDummy_L1` model stands at the
+    `TrainingDummyMarker` position (not just the marker part itself) and can
+    be attacked with the existing combat core like any other training
+    dummy.
+12. Record Pass/Fail and Output for each step above with the commit SHA.
+
+Status: **NOT YET RUN IN STUDIO.** No shell/Studio/Rojo tool was available
+in this session. This section is the reproducible operation sheet required
+by the task; it is not evidence of a passed test.
+
+### Remaining #23 work not covered by this increment
+
+Unchanged from the third pass below: visible server damage display/HUD
+wiring beyond the existing `Hit` broadcast, the timed attack-practice
+source for blocking/shield practice, temporary training potions, Sword/Mage/
+Archer preset loadouts, the Magadou rifle weapon/ammo/reload behavior, and
+the full Studio playable acceptance pass. This pass adds one working scene
+dummy at the marker point but does not add new damage-display UI.
+
+## Third pass (training-scene-bootstrap, now superseded in part by the fourth pass above)
 
 Adds the missing world-hookup layer that every prior pass explicitly listed
 as a dependency: a server-authored placeholder scene so the training ground
@@ -338,19 +474,27 @@ Overall: PASS / FAIL / BLOCKED — reason:
 
 ## Known gaps / dependencies at delivery time
 
-- As of the training-scene-bootstrap pass above, placeholder
-  `TrainingEntrance`/`TrainingExit`/`TrainingReturnSpawn` parts ARE now
-  created automatically by `TrainingSceneBootstrap.luau` in any fresh place —
-  the "a level designer must place them" gap from earlier passes is closed
-  for a minimal placeholder scene, but no art/level-design pass has happened
-  (plain gray/colored blocks only).
-- No stationary dummy is spawned at the reserved `TrainingDummyMarker` yet;
-  see "Dummy reuse" above for the exact missing `TrainingDummyService` API.
+- As of the fourth pass (this assignment), placeholder
+  `TrainingEntrance`/`TrainingExit`/`TrainingReturnSpawn` parts are created
+  automatically, walkable by ordinary walking from a default spawn with no
+  jump/gap, and ensure/repair instead of name-only skip on repeated boots —
+  but no art/level-design pass has happened (plain gray/colored blocks
+  only), and the geometry is still an explicitly-marked dev/placeholder
+  configuration, not an approved layout.
+- One Studio-only dummy now stands at the reserved `TrainingDummyMarker`
+  point via `TrainingDummyService`'s existing spawn path; this is still only
+  a Studio test aid (`RunService:IsStudio()` gated), not a live-server
+  player-facing dummy.
 - No client-facing UI/prompt indicates "you are now training"; this
   increment is server-state only, as scoped.
-- Full #23 acceptance items (dummy damage display, timed attacker, training
+- Full #23 acceptance items (dummy damage DISPLAY/HUD beyond the existing
+  `Hit` broadcast, timed attacker for block/shield practice, training
   potions, 3 class presets, rifle/shield practice) are not implemented and
   must not be reported as complete.
-- This document was written without Studio access; all steps (including the
-  new fresh-place steps above) are unexecuted and must be run and filled in
-  before this task can be considered to have passing Studio evidence.
+- This document was written without Studio/Luau-runner access; all steps
+  (including the fresh-place and collision-safety steps above) are
+  unexecuted and must be run and filled in before this task can be
+  considered to have passing Studio evidence. The new/revised pure tests in
+  `tests/training_scene_config_spec.luau` were checked by hand against the
+  module's arithmetic but were not executed by any Luau CLI in this
+  session.

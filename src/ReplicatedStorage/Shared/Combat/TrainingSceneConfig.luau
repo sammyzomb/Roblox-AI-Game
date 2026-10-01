@@ -1,91 +1,148 @@
 --!strict
--- Task #23 increment: training-scene-bootstrap.
+-- Task #23 increment: fix-training-scene-reachability-ensure-dummy.
 --
 -- Pure (Roblox-API-free) placement/sizing constants and helpers for the
 -- server-authored placeholder training scene. Kept separate from the
 -- service that actually creates Instances so the geometry math (does the
--- platform overlap the default spawn? where do the three tagged parts sit
--- relative to each other?) can be unit tested without any Roblox services.
+-- walkway reach the platform without a gap? does any point overlap the
+-- default spawn footprint? what is each part's resting Y given its own
+-- half-height?) can be unit tested without any Roblox services.
 --
 -- ALL NUMBERS HERE ARE AN EXPLICITLY MARKED DEV/PLACEHOLDER CONFIGURATION,
--- not an approved layout or art pass. per the pinned scope doc
--- ("未決參數使用明確標示的開發配置, 不能當成發布決策"), nothing here may be
--- read as a finalized balance or art decision. This only exists so a fresh
--- Studio place has *something* enterable without manual level-authoring.
+-- not an approved layout or art pass, per the pinned scope doc ("未決參數
+-- 使用明確標示的開發配置, 不能當成發布決策").
 --
--- Placement rationale (conservative, no overlap with default spawn):
---   Default Roblox `SpawnLocation` placement for a fresh baseplate-style
---   place is near the world origin. This scene is offset well away on the
---   X axis (see Origin below) so it can never overlap a default spawn part
---   regardless of that part's exact footprint, while still being a short,
---   obvious walk from it for a single-player Studio smoke test.
+-- Reachability correction (this increment): the prior layout put the whole
+-- scene on a platform raised to Y=10 with nothing connecting it to a fresh
+-- Baseplate's ground level (Y=0), so reaching it required a jump/teleport
+-- that is not "ordinary walking" from a default spawn. This revision keeps
+-- EVERYTHING — walkway, platform top, every marker part's walkable surface —
+-- at one shared ground level (`GroundLevelY`), so an ordinary R15/R6
+-- Humanoid can walk the entire path with zero steps/gaps/jumps. A
+-- `Walkway` strip explicitly spans from near world origin (reachable by
+-- walking off a default SpawnLocation) to the platform edge, with enough
+-- overlap into the platform footprint that there is no seam.
+--
+-- Part resting math: for any part of full height `size.Y` whose TOP surface
+-- must sit at ground level `y`, the part's CENTER must be at
+-- `y - size.Y / 2` (a half-height below the desired top surface). All
+-- offsets below are expressed as the desired FOOT/STANDING Y (ground
+-- level), and `restingCenterY` performs that half-height conversion so
+-- callers never hand-subtract it inconsistently.
 
 export type Vec3 = { X: number, Y: number, Z: number }
 
 local TrainingSceneConfig = {}
 
--- Root container name in Workspace. Also used by the bootstrap service as
--- the idempotency marker: if this Folder already exists, no part is
--- recreated.
+-- Root container name in Workspace. Also the attribute-owned identity
+-- marker: the bootstrap service finds-or-creates a Folder with this Name
+-- AND the `TrainingScene = true` attribute (see TrainingSceneBootstrap),
+-- rather than trusting Name alone.
 TrainingSceneConfig.ContainerName = "TrainingGroundScene"
 
 -- Attribute written to the container so repeated server starts (and a
--- human inspecting the place) can see which config version produced it
--- without guessing from geometry.
-TrainingSceneConfig.SceneVersion = 1
+-- human inspecting the place) can see which config version produced it.
+TrainingSceneConfig.SceneVersion = 2
 
--- Center of the whole placeholder scene, offset away from world origin so
--- it cannot overlap a default SpawnLocation placed near (0, Y, 0).
-TrainingSceneConfig.Origin = { X = 250, Y = 10, Z = 0 } :: Vec3
+-- Shared ground level every walkable surface in this scene sits at. A
+-- fresh Baseplate's top surface and a default SpawnLocation's standing
+-- surface are both Y=0; keeping the whole training path at the same Y
+-- means no jump, ramp, or teleport is ever required to reach it.
+TrainingSceneConfig.GroundLevelY = 0
+
+-- Center of the training platform proper, offset away from world origin on
+-- X only (Z=0, same as a default spawn's typical Z) so the whole scene can
+-- be reached by walking in a straight line, while staying far enough away
+-- that its footprint cannot overlap a default SpawnLocation regardless of
+-- that part's exact size.
+TrainingSceneConfig.Origin = { X = 120, Y = TrainingSceneConfig.GroundLevelY, Z = 0 } :: Vec3
 
 TrainingSceneConfig.Platform = {
 	Size = { X = 60, Y = 2, Z = 60 } :: Vec3,
-	-- Platform top sits at Origin.Y; the part itself is centered half its
-	-- height below that so players standing on it stand at Origin.Y.
 }
 
--- Entrance / exit / return-spawn are simple deterministic offsets from
--- Origin, all within the platform footprint (60x60) with margin.
-TrainingSceneConfig.EntranceOffset = { X = -20, Y = 1, Z = 0 } :: Vec3
-TrainingSceneConfig.ExitOffset = { X = 20, Y = 1, Z = 0 } :: Vec3
--- Return spawn is deliberately OUTSIDE the platform footprint (back toward
--- world origin) so exiting visibly returns the player to "the world" and
--- never re-lands them on the training platform itself.
-TrainingSceneConfig.ReturnSpawnOffset = { X = -40, Y = 1, Z = 0 } :: Vec3
+-- Walkway: a long, flat strip connecting world origin's walkable area to the
+-- platform, at the same ground level. Centered halfway between X=0 and the
+-- platform's near edge, wide enough to comfortably walk without sidestepping
+-- off the edge. Its far end deliberately overlaps a few studs into the
+-- platform footprint so there is no seam/gap between the two parts.
+TrainingSceneConfig.Walkway = {
+	Size = { X = TrainingSceneConfig.Origin.X - TrainingSceneConfig.Platform.Size.X / 2 + 6, Y = 1, Z = 10 } :: Vec3,
+}
+-- Walkway part is centered between X=0 and the platform edge (minus a small
+-- overlap margin so it is pulled slightly toward the platform, guaranteeing
+-- overlap rather than relying on exact edge math).
+TrainingSceneConfig.WalkwayCenterOffset = {
+	X = -(TrainingSceneConfig.Platform.Size.X / 2 + (TrainingSceneConfig.Walkway.Size.X / 2) - 6),
+	Y = 0,
+	Z = 0,
+} :: Vec3
 
--- One stationary dummy marker point, used only to validate/park a tagged
--- CombatNPC if TrainingDummyService (or a future variant) can be bootstrapped
--- onto it. See TrainingSceneBootstrap.luau header for why this increment
--- does not itself spawn a dummy here.
-TrainingSceneConfig.DummyMarkerOffset = { X = 0, Y = 1, Z = 20 } :: Vec3
+-- Entrance / exit are simple deterministic offsets from Origin, within the
+-- platform footprint (60x60) with margin.
+TrainingSceneConfig.EntranceOffset = { X = -20, Y = 0, Z = 0 } :: Vec3
+TrainingSceneConfig.ExitOffset = { X = 20, Y = 0, Z = 0 } :: Vec3
+
+-- Return spawn sits on the WORLD-SIDE walkway, near (but not overlapping)
+-- default spawn, at the same ground level — never on the training platform
+-- and never floating in training-local air. It is placed close to X=0 (a
+-- few studs out along the walkway toward the platform) so exiting visibly
+-- returns the player toward "the world" without landing back inside the
+-- default spawn's own footprint.
+TrainingSceneConfig.ReturnSpawnOffset = { X = -(TrainingSceneConfig.Origin.X - 12), Y = 0, Z = 0 } :: Vec3
+
+-- One stationary dummy marker/point, used both as a debug anchor and (this
+-- increment) as the actual position TrainingDummyService spawns its
+-- Studio-only scene dummy at. See TrainingSceneBootstrap.luau and
+-- TrainingDummyService.luau for the exact split of responsibility: this
+-- module only exposes the pure point, it creates no Instance and spawns no
+-- combatant.
+TrainingSceneConfig.DummyMarkerOffset = { X = 0, Y = 0, Z = 20 } :: Vec3
 
 local function add(a: Vec3, b: Vec3): Vec3
 	return { X = a.X + b.X, Y = a.Y + b.Y, Z = a.Z + b.Z }
 end
 
--- Resolves every named point as an absolute position, given the configured
--- Origin. Exposed as a pure function (no Instance creation) so tests can
--- assert exact coordinates and non-overlap without Roblox.
+-- Converts a desired standing/top-surface Y and a part's full height into
+-- the Y the part's CENTER must be placed at so its top surface rests
+-- exactly at `standY`. Exposed so both the bootstrap service and tests
+-- share one half-height formula instead of re-deriving it inconsistently.
+function TrainingSceneConfig.restingCenterY(standY: number, fullHeightY: number): number
+	return standY - fullHeightY / 2
+end
+
+-- Resolves every named point as an absolute STANDING position (i.e. the
+-- walkable surface Y, not any part's center), given the configured Origin.
+-- Exposed as a pure function (no Instance creation) so tests can assert
+-- exact coordinates, ground-level consistency, and non-overlap without
+-- Roblox.
 function TrainingSceneConfig.resolve(origin: Vec3?)
 	local o = origin or TrainingSceneConfig.Origin
+	local walkwayCenter = add(o, TrainingSceneConfig.WalkwayCenterOffset)
 	return {
 		Origin = o,
 		Entrance = add(o, TrainingSceneConfig.EntranceOffset),
 		Exit = add(o, TrainingSceneConfig.ExitOffset),
 		ReturnSpawn = add(o, TrainingSceneConfig.ReturnSpawnOffset),
 		DummyMarker = add(o, TrainingSceneConfig.DummyMarkerOffset),
+		WalkwayCenter = walkwayCenter,
 	}
 end
 
 -- True if `point` falls within the horizontal (X/Z) footprint of an
 -- axis-aligned box centered at `boxCenter` with the given full `boxSize`.
--- Used by tests to assert the configured points stay clear of a
--- representative default spawn footprint, and to assert the three tagged
--- points stay within (or deliberately outside, for ReturnSpawn) the
--- platform footprint.
 function TrainingSceneConfig.pointInsideBox(point: Vec3, boxCenter: Vec3, boxSize: Vec3): boolean
 	return math.abs(point.X - boxCenter.X) <= boxSize.X / 2
 		and math.abs(point.Z - boxCenter.Z) <= boxSize.Z / 2
+end
+
+-- True if two axis-aligned horizontal (X/Z) boxes overlap at all (used to
+-- assert the walkway and platform footprints actually touch/overlap, i.e.
+-- there is no gap a player would have to jump across).
+function TrainingSceneConfig.boxesOverlap(centerA: Vec3, sizeA: Vec3, centerB: Vec3, sizeB: Vec3): boolean
+	local overlapX = math.abs(centerA.X - centerB.X) <= (sizeA.X + sizeB.X) / 2
+	local overlapZ = math.abs(centerA.Z - centerB.Z) <= (sizeA.Z + sizeB.Z) / 2
+	return overlapX and overlapZ
 end
 
 return TrainingSceneConfig
