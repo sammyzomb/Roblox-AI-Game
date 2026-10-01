@@ -6,8 +6,11 @@
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+
+local TrainingSceneConfig = require(ReplicatedStorage.Shared.Combat.TrainingSceneConfig)
 
 local TrainingDummyService = {
 	Priority = 10, -- after CombatService
@@ -19,6 +22,22 @@ local DUMMIES = {
 	{ Position = Vector3.new(-12, 3, -16), Level = 10, Weapon = "wooden_shield" },
 	{ Position = Vector3.new(0, 3, -30), Level = 20, Weapon = "tower_shield" },
 }
+
+-- Task #23 increment (fix-training-scene-reachability-ensure-dummy): one
+-- additional dummy positioned at TrainingSceneConfig's own DummyMarker
+-- point, so the bootstrap-created training scene (TrainingSceneBootstrap)
+-- has at least one Studio dummy actually standing on its reserved marker,
+-- instead of only reserving an empty anchor part. This reuses the exact
+-- same spawnDummy/CombatNPC/death-respawn path below as every other
+-- dummy - no second dummy/combat system, and still gated by
+-- RunService:IsStudio() like the rest of this service. A small Y offset
+-- (+3) matches the other DUMMIES entries' stand-height above their own
+-- ground-level marker/position.
+local function sceneDummySpec()
+	local marker = TrainingSceneConfig.resolve().DummyMarker
+	return { Position = Vector3.new(marker.X, marker.Y + 3, marker.Z), Level = 1, Weapon = "training_sword" }
+end
+
 local RESPAWN_SECONDS = 3
 
 local combat: any
@@ -50,6 +69,7 @@ function TrainingDummyService:Start()
 	for _, spec in DUMMIES do
 		specByModel[spawnDummy(spec)] = spec
 	end
+	specByModel[spawnDummy(sceneDummySpec())] = sceneDummySpec()
 	combat.Killed:Connect(function(victim: Model)
 		local spec = specByModel[victim]
 		if spec == nil then
