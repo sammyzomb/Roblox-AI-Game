@@ -9,6 +9,51 @@ import claude_implementer as runner
 
 
 class ImplementationTests(unittest.TestCase):
+    @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/game"})
+    def test_pr_policy_denial_requires_saved_ref_and_exact_error(self):
+        ws = self.workspace()
+        ws.write("src/main.lua", "return 2\n")
+        policy = "HTTP 403 calling https://api.github.com/repos/owner/game/pulls: GitHub Actions is not permitted to create or approve pull requests"
+        for error, expected in ((policy, runner.PRCreationPending),
+                                (policy.replace("403", "500"), RuntimeError),
+                                (policy.replace("/pulls:", "/git/refs:"), RuntimeError),
+                                ("HTTP 403 calling https://api.github.com/repos/owner/game/pulls: Resource not accessible", RuntimeError)):
+            calls = []
+            def post(path, payload):
+                calls.append(path)
+                if path == "/pulls":
+                    raise RuntimeError(error)
+                return {"sha": "saved"}
+            with self.subTest(error=error), patch.object(runner, "github_post", side_effect=post):
+                with self.assertRaises(expected) as caught:
+                    runner.publish(ws, "parent", "tree", 23, "claude-dev", "handoff")
+                self.assertIn("/git/refs", calls)
+                if expected is runner.PRCreationPending:
+                    self.assertEqual(caught.exception.sha, "saved")
+            # A failure while saving the ref must never be reclassified.
+        with patch.object(runner, "github_post", side_effect=RuntimeError(policy)):
+            with self.assertRaises(RuntimeError):
+                runner.publish(ws, "parent", "tree", 23, "claude-dev", "handoff")
+
+    def test_pending_pr_status_and_incomplete_exit_are_distinct(self):
+        import tempfile
+        for incomplete in (False, True):
+            pending = runner.PRCreationPending("branch-url", "saved-sha", "claude-dev", incomplete)
+            with tempfile.TemporaryDirectory() as directory:
+                summary = str(Path(directory) / "summary.md")
+                with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": summary}), \
+                     patch.object(runner, "load_event", return_value={}), \
+                     patch.object(runner, "authorize", return_value=(23, "claude-dev", "a" * 40, "task")), \
+                     patch.object(runner, "github_get", side_effect=pending), \
+                     patch.object(runner, "comment") as comment:
+                    self.assertEqual(runner.main(), int(incomplete))
+                self.assertEqual([c.args[0] for c in comment.call_args_list], [23, 3])
+                status = Path(summary).read_text()
+                self.assertIn("WAITING_FOR_TECHNICAL_LEAD_PR", status)
+                self.assertIn("saved-sha", status)
+                self.assertIn("NOT run", status)
+                self.assertTrue(status.startswith("[BLOCKED]" if incomplete else "[HANDOFF]"))
+
     @patch.dict(os.environ, {"CLAUDE_MODEL": "claude-sonnet-5"})
     def test_real_request_reserves_output_for_file_tools(self):
         messages = [{"role": "user", "content": "bounded increment"}]
