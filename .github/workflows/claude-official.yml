@@ -1,0 +1,54 @@
+name: Claude Code Official
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  id-token: write
+
+jobs:
+  claude:
+    if: >
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.event.comment.author_association == 'OWNER' &&
+      contains(github.event.comment.body, '[CLAUDE-OFFICIAL]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run official Claude Code Action
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Use the workflow token for GitHub operations so this path does not
+          # depend on installation of the separate Claude GitHub App.
+          github_token: ${{ github.token }}
+
+          # Reuse the repository's existing Anthropic Workload Identity
+          # Federation configuration. These are identifiers, not credentials.
+          anthropic_federation_rule_id: fdrl_01AcTwt2NFyUCaGMRxmFrQAG
+          anthropic_organization_id: 21c12f48-e933-49ca-b5bb-e6b84f901e5e
+          anthropic_service_account_id: svac_01FtmSsticj8DHNRbayjucWv
+          anthropic_workspace_id: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
+
+          trigger_phrase: "[CLAUDE-OFFICIAL]"
+
+          # Keep this route bounded. Do not pin the old custom-runner model
+          # string; let the official action use its supported default.
+          base_branch: claude-dev
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --max-turns 12
+            --allowedTools "Bash(git:*),Bash(luau:*),Bash(rojo:*),Bash(luau-lsp:*)"
+            --append-system-prompt "You are an implementation developer for Roblox-AI-Game. Make the smallest safe change requested in the issue comment. Preserve the existing combat architecture. Run available offline checks. Never claim Roblox Studio was run unless direct evidence exists. Commit changes on a task branch and leave reviewable evidence; do not merge."
