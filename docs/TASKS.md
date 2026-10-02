@@ -65,6 +65,18 @@ Current priority:
 
 ### Creative Grok Bots — Specialist Planning Roles
 
+#### Art Planner
+Primary responsibilities:
+- Define visual direction, world theme, environment style, character/enemy visual language, weapon visual families, UI visual direction, and asset priorities.
+- Maintain `docs/ART_DIRECTION.md` and art briefs.
+- Does not own production gameplay code.
+
+#### Art Supervisor
+Primary responsibilities:
+- Review visual quality, consistency, readability, style compliance, and mobile visual/performance complexity.
+- Maintain review guidance and art-related approval/revision notes.
+- Does not own production gameplay code.
+
 #### Animation Designer
 Primary responsibilities:
 - Define locomotion and combat animation language.
