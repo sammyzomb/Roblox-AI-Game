@@ -30,6 +30,16 @@ class ImplementationTests(unittest.TestCase):
             "Anthropic HTTP 400; inspect API access/model settings",
         )
 
+
+    def test_anthropic_http_error_reason_normalizes_safe_multiline_message(self):
+        detail = ('HTTP 400 calling https://api.anthropic.com/v1/messages: \n'
+                  '{"error":{"type":"invalid_request_error",'
+                  '"message":"  messages:\\n  input length exceeds the model context window  "}}')
+        self.assertEqual(
+            runner.anthropic_http_error_reason(detail),
+            "Anthropic HTTP 400; invalid_request_error: messages: input length exceeds the model context window",
+        )
+
     @patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/game"})
     def test_pr_policy_denial_requires_saved_ref_and_exact_error(self):
         ws = self.workspace()
