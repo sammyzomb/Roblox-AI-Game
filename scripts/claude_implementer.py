@@ -262,11 +262,11 @@ def request_claude(messages, token):
 
 def anthropic_http_error_reason(detail):
     """Return actionable Anthropic error fields without logging raw bodies."""
-    status = re.search(r"HTTP (\\d{3})", detail)
+    status = re.search(r"HTTP (\d{3})", detail)
     generic = (f"Anthropic HTTP {status.group(1)}; inspect API access/model settings"
                if status else "Anthropic request failed; inspect API access/model settings")
     match = re.fullmatch(
-        r"HTTP (\\d{3}) calling https://api\\.anthropic\\.com/[^:]+:\\s*(\\{.*\\})",
+        r"HTTP (\d{3}) calling https://api\.anthropic\.com/[^:]+:\s*(\{.*\})",
         detail,
         re.S,
     )
@@ -285,7 +285,7 @@ def anthropic_http_error_reason(detail):
         return generic
     if not isinstance(message, str):
         return f"Anthropic HTTP {match.group(1)}; {kind}"
-    message = re.sub(r"\\s+", " ", message).strip()[:500]
+    message = re.sub(r"\s+", " ", message).strip()[:500]
     if (not message or re.search(r"authorization|bearer|api[_ -]?key|secret|token", message, re.I)):
         return f"Anthropic HTTP {match.group(1)}; {kind}"
     message = re.sub(r"[A-Za-z0-9_-]{64,}", "[redacted]", message)
