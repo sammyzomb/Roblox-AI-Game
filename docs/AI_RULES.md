@@ -29,6 +29,9 @@
 - **Claude — Primary Programmer**：主要 Luau 程式實作與核心系統開發；對主要功能提供第一版實作與測試。
 - **Cursor — Secondary Developer / Verification Engineer**：驗證 Claude 成果、執行 fresh-agent smoke test、regression/build 檢查、找可重現 bug、檢查整合風險，並在被指派時做小範圍且有測試依據的修正。
 - **Grok Bot — Independent Reviewer / Prototype Developer**：提供獨立架構、玩法平衡、安全、漏洞面、網路與行動裝置觀點；必要時做隔離原型，不與 Claude 平行重寫同一核心。
+- **Animation Designer（Creative Grok Bot）**：負責動畫方向、動作狀態、戰鬥可讀性、武器持握與動畫優先級，不負責玩法規則或 production gameplay code。
+- **Sound Effects Planner（Creative Grok Bot）**：負責戰鬥／魔法／UI／環境／成長回饋音效規劃與事件 mapping，不負責 production gameplay code。
+- **Music Planner（Creative Grok Bot）**：負責音樂識別、場景／戰鬥／Boss／PvP 音樂結構、動態轉場、loop 與 intensity layers，不負責 production gameplay code。
 
 ## Default Workflow
 
