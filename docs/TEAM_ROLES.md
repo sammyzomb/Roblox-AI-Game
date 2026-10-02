@@ -47,16 +47,16 @@
 
 Creative roles do not own gameplay code.
 
-## Cursor Policy
-**Cursor is not a project role and is not a required dependency.**
+## Cursor — Secondary Developer / Verification Engineer
+**Cursor is now an active project role under ChatGPT coordination.**
 
 Current policy:
-- Do not write "Cursor will implement", "Cursor will commit", "Cursor cloud agent will push", or equivalent as part of the standard workflow.
-- Do not block work waiting for Cursor.
-- If an AI lacks GitHub write access, post the full deliverable in the assigned GitHub Issue.
-- ChatGPT can transfer approved documentation into GitHub when needed.
-- Production code implementation defaults to Claude unless ChatGPT explicitly assigns otherwise.
-- Cursor may be used manually by the Product Owner in the future, but it is outside the core AI team and must never be treated as an automatic handoff target.
+- Cursor verifies Claude implementation through fresh-agent smoke tests, regression/build checks, integration checks, and Studio prerequisites.
+- Cursor may make small, isolated, test-backed fixes when explicitly assigned by ChatGPT.
+- Cursor must not independently rewrite Claude-owned core production systems.
+- Cursor does not replace Claude as Primary Programmer.
+- Work must use assigned task-specific branches and Pull Requests.
+- ChatGPT remains responsible for task ownership, conflict resolution, and merge readiness.
 
 ## Source of Truth
 GitHub is the project source of truth.
