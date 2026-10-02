@@ -63,6 +63,30 @@ Current priority:
 - Review architecture decisions that affect PvP/PvE fairness, networking, and mobile play.
 - Produce isolated prototypes only for decisions that need comparison.
 
+### Creative Grok Bots — Specialist Planning Roles
+
+#### Animation Designer
+Primary responsibilities:
+- Define locomotion and combat animation language.
+- Specify idle/walk/run/jump/fall/landing, melee/ranged/magic/defense, dodge/block/parry, hit/knockback/death, combo transitions, weapon handling, boss telegraphs, mobile readability, and animation performance constraints.
+- Maintain `docs/ANIMATION_DIRECTION.md` and animation priority/state matrices.
+- Does not own gameplay rules, combat balance, or production gameplay code.
+
+#### Sound Effects Planner
+Primary responsibilities:
+- Define combat, magic, UI, ambience, reward/progression, defense, and impact SFX.
+- Maintain `docs/SFX_PLAN.md`, event maps, naming rules, and implementation priorities.
+- Does not own production gameplay code.
+
+#### Music Planner
+Primary responsibilities:
+- Define the musical identity for hub, exploration, combat, boss, and PvP.
+- Define dynamic transitions, loop lengths, intensity layers, cue maps, and implementation priorities.
+- Maintain `docs/MUSIC_PLAN.md`.
+- Does not own production gameplay code.
+
+Creative roles may be separate Grok bots. They report through GitHub and escalate gameplay/performance conflicts to ChatGPT.
+
 ### ChatGPT — Technical Lead
 Branch: `chatgpt-dev` or task-specific `chatgpt/*` branches.
 
