@@ -12,6 +12,21 @@
 -- "Attack" uses the main-hand attack named "Primary" (or the first by name),
 -- "Skill" uses the next main-hand attack, "Off-hand" the first off-hand attack.
 -- The server validates everything; this only avoids pointless requests.
+--
+-- Public API:
+--   CombatController.equip(slot, itemId | false)
+--   CombatController.useItem(itemId)
+--   CombatController.selectTrainingPreset(presetId)
+--       Sends the existing CombatRequest action "TrainingPreset".
+--       There is no selector UI and no extra touch button in this module.
+--   CombatController.raycast(origin, direction) -> Vector3
+--
+-- A validated CombatEvent { Kind = "Loadout", Temporary, MainHand, OffHand }
+-- replaces the local attack map. Temporary true latches that map so a later
+-- PlayerData StateChanged or a late GetState result cannot put the saved
+-- loadout back while the server still has the training weapon. Temporary
+-- false replaces the map and clears the latch. A missing or non-boolean
+-- Temporary flag, a malformed hand, or an unknown weapon id changes neither.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -22,13 +37,14 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net"))
 local Definitions = require(Shared:WaitForChild("Combat"):WaitForChild("Definitions"))
+local TrainingLoadouts = require(Shared:WaitForChild("Combat"):WaitForChild("TrainingLoadouts"))
 local DamageFloatView = require(script.Parent.Parent:WaitForChild("DamageFloatView"))
 
 local CombatController = {}
 
 local defs = Definitions.get()
 local request: RemoteEvent
-local loadout: { [string]: string } = {}
+local attackMap = TrainingLoadouts.emptyAttackMap()
 local player = Players.LocalPlayer
 
 local AIM_DISTANCE = 300
@@ -77,7 +93,7 @@ function CombatController.raycast(origin: Vector3, direction: Vector3): Vector3
 end
 
 local function attack(slot: string, index: number)
-	local ids = attackOrder(loadout[slot])
+	local ids = attackOrder(attackMap.Loadout[slot])
 	local attackId = ids[index]
 	if attackId then
 		request:FireServer({ Action = "Attack", Slot = slot, AttackId = attackId, Aim = aimPoint() })
@@ -114,21 +130,24 @@ function CombatController.useItem(itemId: string)
 	request:FireServer({ Action = "UseItem", ItemId = itemId })
 end
 
+function CombatController.selectTrainingPreset(presetId: string)
+	request:FireServer({ Action = TrainingLoadouts.SELECTION_ACTION, PresetId = presetId })
+end
+
 function CombatController:Init()
 	request = Net.event(Net.Names.CombatRequest)
 end
 
 function CombatController:Start()
 	Net.event(Net.Names.StateChanged).OnClientEvent:Connect(function(state)
-		if type(state) == "table" and type(state.Loadout) == "table" then
-			loadout = state.Loadout
-		end
+		attackMap = TrainingLoadouts.applyPersistentAttackMap(attackMap, state)
 	end)
+	-- Read attackMap only after InvokeServer resumes. A Loadout event during
+	-- the yield updates the upvalue first; the helper then ignores this
+	-- saved snapshot while the temporary latch is on.
 	task.spawn(function()
 		local state = Net.func(Net.Names.GetState):InvokeServer()
-		if type(state) == "table" and type(state.Loadout) == "table" then
-			loadout = state.Loadout
-		end
+		attackMap = TrainingLoadouts.applyPersistentAttackMap(attackMap, state)
 	end)
 
 	ContextActionService:BindAction("CombatAttack", onBegin(function()
@@ -154,6 +173,7 @@ function CombatController:Start()
 	Net.event(Net.Names.CombatEvent).OnClientEvent:Connect(function(event)
 		-- Presentation hook: animations, VFX and SFX attach here (see docs/COMBAT_API.md).
 		-- Hit labels read the server payload only. They do not recompute damage.
+		attackMap = TrainingLoadouts.applyLoadoutEvent(attackMap, event)
 		if type(event) == "table" and event.Kind == "Rejected" then
 			print(`[Combat] {event.Reason}`)
 		end

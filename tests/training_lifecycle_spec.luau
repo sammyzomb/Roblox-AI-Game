@@ -28,6 +28,11 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		local rulesets: { [unknown]: string } = {}
 		local resetOk: { [unknown]: boolean } = {}
 		local setRulesetLog: { { Player: unknown, Ruleset: string } } = {}
+		local presetCalls = 0
+		local restoreCalls = 0
+		local failPreset = false
+		local failRestore = false
+		local chosenPreset: string? = nil
 
 		local adapter: TrainingLifecycle.CombatAdapter = {
 			GetCombatant = function(model: unknown)
@@ -45,6 +50,22 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 					return combatants[model] ~= nil and combatants[model].Alive
 				end
 				return resetOk[model]
+			end,
+			ApplyDefaultTrainingPreset = function(_player: unknown)
+				presetCalls += 1
+				if failPreset then
+					return false, "PresetFailed"
+				end
+				chosenPreset = "Swordsman"
+				return true, nil
+			end,
+			RestoreSavedLoadout = function(_player: unknown)
+				restoreCalls += 1
+				if failRestore then
+					return false, "RestoreFailed"
+				end
+				chosenPreset = nil
+				return true, nil
 			end,
 		}
 
@@ -82,6 +103,24 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			end,
 			LogLength = function()
 				return #setRulesetLog
+			end,
+			PresetCalls = function()
+				return presetCalls
+			end,
+			RestoreCalls = function()
+				return restoreCalls
+			end,
+			Chosen = function()
+				return chosenPreset
+			end,
+			SetChosen = function(presetId: string)
+				chosenPreset = presetId
+			end,
+			FailPreset = function(fail: boolean)
+				failPreset = fail
+			end,
+			FailRestore = function(fail: boolean)
+				failRestore = fail
 			end,
 		}
 	end
@@ -122,6 +161,8 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(why, "ResetFailed")
 		eq(lifecycle:IsTraining(player), false, "reset failure must not leave training membership claimed")
 		eq(fake.LogLength(), 0, "SetRuleset must never run before a successful reset")
+		eq(fake.PresetCalls(), 0, "a failed reset must not apply a training preset")
+		eq(fake.RestoreCalls(), 0)
 	end)
 
 	test("original PvP ruleset is restored when the character is replaced (death/respawn)", function()
@@ -380,5 +421,136 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		local ok2, why2 = lifecycle:Exit(player, character)
 		eq(ok2, false)
 		eq(why2, "NotTraining")
+	end)
+
+	test("first Enter applies the default preset only after training membership exists", function()
+		local fake = newFakeCombat()
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+		local lifecycle
+		local sawTraining: boolean? = nil
+		fake.Adapter.ApplyDefaultTrainingPreset = function(who: unknown)
+			sawTraining = lifecycle:IsTraining(who)
+			return true, nil
+		end
+		lifecycle = TrainingLifecycle.new(fake.Adapter)
+
+		local ok = lifecycle:Enter(player, character)
+		eq(ok, true)
+		eq(sawTraining, true, "default preset runs only once the session is active")
+		eq(fake.RulesetOf(player), "Training")
+		eq(fake.RestoreCalls(), 0, "a successful enter does not restore the saved loadout")
+	end)
+
+	test("re-entry during the same session does not apply the default preset again", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, firstCharacter, secondCharacter = "p1", "charA", "charB"
+		fake.Register(firstCharacter, true)
+		fake.Register(secondCharacter, true)
+
+		eq(lifecycle:Enter(player, firstCharacter), true)
+		eq(fake.PresetCalls(), 1)
+		eq(fake.Chosen(), "Swordsman")
+		fake.SetChosen("Mage")
+
+		eq(lifecycle:Enter(player, secondCharacter), true)
+		eq(lifecycle:IsTraining(player), true)
+		eq(fake.PresetCalls(), 1, "re-entry must not silently reapply Swordsman")
+		eq(fake.Chosen(), "Mage")
+		eq(fake.RestoreCalls(), 0)
+	end)
+
+	test("failed initial preset rolls back membership, ruleset, generation, and asks for the saved loadout", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+		fake.FailPreset(true)
+
+		local ok, why = lifecycle:Enter(player, character)
+		eq(ok, false)
+		eq(why, "PresetFailed")
+		eq(lifecycle:IsTraining(player), false, "membership rolled back")
+		eq(fake.RulesetOf(player), "PvE", "prior ruleset restored")
+		eq(fake.PresetCalls(), 1)
+		eq(fake.RestoreCalls(), 1, "saved loadout restored after the failed apply")
+
+		lifecycle:OnCharacterRemoved(player, character)
+		eq(lifecycle:IsTraining(player), false)
+		eq(fake.RestoreCalls(), 1, "a stale removal after rollback does not restore again")
+		eq(fake.RulesetOf(player), "PvE")
+	end)
+
+	test("manual Exit restores the saved loadout before leaving training", function()
+		local fake = newFakeCombat()
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+		local lifecycle
+		local stillTraining: boolean? = nil
+		lifecycle = TrainingLifecycle.new(fake.Adapter)
+		fake.Adapter.RestoreSavedLoadout = function(who: unknown)
+			stillTraining = lifecycle:IsTraining(who)
+			return true, nil
+		end
+
+		eq(lifecycle:Enter(player, character), true)
+		local ok = lifecycle:Exit(player, character)
+		eq(ok, true)
+		eq(stillTraining, true, "saved loadout is restored before the session is dropped")
+		eq(lifecycle:IsTraining(player), false)
+		eq(fake.RulesetOf(player), "PvE")
+	end)
+
+	test("manual Exit stays in training when the saved loadout cannot be restored", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+		eq(lifecycle:Enter(player, character), true)
+		fake.FailRestore(true)
+
+		local ok, why = lifecycle:Exit(player, character)
+		eq(ok, false)
+		eq(why, "RestoreFailed")
+		eq(lifecycle:IsTraining(player), true, "failed restore must not return the player to normal play")
+		eq(fake.RulesetOf(player), "Training")
+	end)
+
+	test("death and respawn do not restore or persist a training preset from this module", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, oldCharacter, newCharacter = "p1", "charA", "charB"
+		fake.Register(oldCharacter, true)
+		eq(lifecycle:Enter(player, oldCharacter), true)
+		eq(fake.PresetCalls(), 1)
+		local restores = fake.RestoreCalls()
+
+		lifecycle:OnCharacterRemoved(player, oldCharacter)
+		eq(lifecycle:IsTraining(player), false)
+		eq(fake.RestoreCalls(), restores, "character removal must not write or restore training gear")
+		eq(fake.RulesetOf(player), "PvE")
+
+		fake.Register(newCharacter, true)
+		eq(lifecycle:Enter(player, newCharacter), true)
+		eq(fake.PresetCalls(), 2, "a new session after respawn may apply the default preset again")
+		eq(fake.RestoreCalls(), restores)
+	end)
+
+	test("disconnect does not restore a loadout or call SetRuleset", function()
+		local fake = newFakeCombat()
+		local lifecycle = TrainingLifecycle.new(fake.Adapter)
+		local player, character = "p1", "char1"
+		fake.Register(character, true)
+		eq(lifecycle:Enter(player, character), true)
+		local calls = fake.SetRulesetCallsFor(player)
+		local restores = fake.RestoreCalls()
+
+		lifecycle:OnPlayerRemoving(player)
+		lifecycle:OnCharacterRemoved(player, character)
+
+		eq(lifecycle:IsTraining(player), false)
+		eq(fake.SetRulesetCallsFor(player), calls, "disconnect must not recreate ruleset state")
+		eq(fake.RestoreCalls(), restores, "disconnect must not recreate loadout state")
 	end)
 end

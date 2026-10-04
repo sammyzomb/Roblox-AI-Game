@@ -20,6 +20,13 @@
 --   CombatService:SetRuleset(player, rulesetId)                "PvE" (default) / "PvP" / custom
 --   CombatService:SetTeam(model, team?)
 --   CombatService:Revive(model)                                NPC respawn / round reset
+--   CombatService:ApplyTrainingPreset(player, presetId) -> (boolean, string?)
+--       Temporary in-memory hands for an active training session.
+--       Accepts only TrainingLoadouts preset ids. Does not call
+--       PlayerDataService:Update and does not change consumables.
+--   CombatService:RestorePersistentLoadout(player) -> (boolean, string?)
+--       Clears training hands and equips the saved PlayerData hands.
+--       Reads PlayerData. Does not call Update.
 --   CombatService.AttackStarted:Connect(function(model, plan) end)
 --   CombatService.Damaged:Connect(function(targetModel, attackerModel?, result) end)
 --   CombatService.Killed:Connect(function(victimModel, killerModel?) end)
@@ -29,7 +36,14 @@
 --   { Action = "Block", Active = boolean }
 --   { Action = "UseItem", ItemId = string }
 --   { Action = "Equip", Slot = LoadoutSlot, ItemId = string | false }   false unequips
+--   { Action = "TrainingPreset", PresetId = "Swordsman"|"Mage"|"Archer" }
+--       In-memory only, and only while the training predicate is true.
 -- CombatEvent (server -> clients) carries presentation data only (see broadcast calls).
+-- A successful temporary apply, saved-hand restore, or fresh-character
+-- saved equip also FireClient's
+-- { Kind = "Loadout", Temporary = boolean, MainHand = string|false, OffHand = string|false }
+-- to the owning player. Temporary is true only for a training preset.
+-- It is not broadcast.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -50,6 +64,7 @@ local CombatCore = require(Combat.CombatCore)
 local Rulesets = require(Combat.Rulesets)
 local StatusEffects = require(Combat.StatusEffects)
 local Projectile = require(Combat.Projectile)
+local TrainingLoadouts = require(Combat.TrainingLoadouts)
 
 local RateLimiter = require(script.Parent.Parent.Systems.RateLimiter)
 
@@ -168,6 +183,24 @@ local function reject(entry: Entry, reason: string?)
 	if entry.Player then
 		combatEvent:FireClient(entry.Player, { Kind = "Rejected", Reason = reason or "Rejected" })
 	end
+end
+
+-- Tells only the owning client which hands are actually equipped in memory.
+-- Temporary is true for a training preset and false for saved hands.
+-- Persistent StateChanged still describes saved PlayerData, so the client
+-- keeps a temporary map until a later event sets Temporary to false.
+local function presentLoadout(entry: Entry, temporary: boolean)
+	local player = entry.Player
+	if player == nil then
+		return
+	end
+	local hands = entry.Combatant.Loadout
+	combatEvent:FireClient(player, {
+		Kind = "Loadout",
+		Temporary = temporary,
+		MainHand = if hands.MainHand then hands.MainHand.Id else false,
+		OffHand = if hands.OffHand then hands.OffHand.Id else false,
+	})
 end
 
 ---------------------------------------------------------------------------
@@ -344,6 +377,9 @@ local function onCharacterAdded(player: Player, character: Model)
 	local entry = register(character, humanoid, root, combatant, player, rulesetId)
 	byPlayer[player] = entry
 	equipSavedLoadout(player, combatant)
+	-- The fresh character is on the saved loadout. Tell the owning client
+	-- so a temporary attack-map latch from the previous character clears.
+	presentLoadout(entry, false)
 end
 
 local function onPlayerDataLoaded(player: Player)
@@ -655,6 +691,59 @@ function CombatService:SetTrainingPredicate(predicate: (player: Player) -> boole
 	isTraining = predicate
 end
 
+-- Applies one approved training preset to the player's live combatant.
+-- Requires the injected training predicate. Missing, dead, and busy
+-- combatants are rejected before any hand changes. An unexpected equip
+-- failure rolls the previous in-memory hands back inside TrainingLoadouts.
+-- PlayerDataService:Update is intentionally not called.
+function CombatService:ApplyTrainingPreset(player: Player, presetId: unknown): (boolean, string?)
+	if not isTraining(player) then
+		return false, "NotTraining"
+	end
+	local preset, why = TrainingLoadouts.validatePresetId(presetId)
+	if preset == nil then
+		return false, why
+	end
+	local entry = byPlayer[player]
+	if entry == nil then
+		return false, "NotRegistered"
+	end
+	local applied, reason = TrainingLoadouts.applyPreset(engine, entry.Combatant, preset, now())
+	if not applied then
+		return false, reason
+	end
+	presentLoadout(entry, true)
+	return true, nil
+end
+
+-- Replaces in-memory training hands with the hands stored in PlayerData.
+-- This reads the saved record and does not call PlayerDataService:Update,
+-- so a training preset cannot be persisted by leaving the area.
+function CombatService:RestorePersistentLoadout(player: Player): (boolean, string?)
+	local entry = byPlayer[player]
+	if entry == nil then
+		return false, "NotRegistered"
+	end
+	local data = playerData:Get(player)
+	local profile = playerData:GetProfile(player)
+	if data == nil or profile == nil then
+		return false, "NoData"
+	end
+	local restored, why = TrainingLoadouts.equipSavedHands(
+		engine,
+		entry.Combatant,
+		data.Loadout.MainHand,
+		data.Loadout.OffHand,
+		profile,
+		now()
+	)
+	if not restored then
+		return false, why
+	end
+	presentLoadout(entry, false)
+	return true, nil
+end
+
 function CombatService:SetTeam(model: Model, team: string?)
 	local entry = entries[model]
 	if entry then
@@ -737,10 +826,8 @@ local function onEquip(entry: Entry, player: Player, slot: string, itemId: strin
 		return
 	end
 	if isTraining(player) then
-		-- Equip changes persist the loadout to PlayerDataService below; that
-		-- must never happen while training (presets are fixed per session
-		-- once implemented, and no UI currently sends Equip during training,
-		-- but the server cannot assume that holds for every client).
+		-- Equip writes the loadout through PlayerDataService below. Training
+		-- presets use Action "TrainingPreset" and must never reach this write.
 		return reject(entry, "TrainingNoPersistentEquip")
 	end
 	local c = entry.Combatant
@@ -826,6 +913,16 @@ local function onRequest(player: Player, request: unknown)
 	elseif action == "Equip" then
 		if type(r.Slot) == "string" and (r.ItemId == false or isId(r.ItemId)) then
 			onEquip(entry, player, r.Slot, r.ItemId)
+		end
+	elseif action == "TrainingPreset" then
+		local presetId, why = TrainingLoadouts.validateSelectionRequest(r)
+		if presetId == nil then
+			reject(entry, why)
+		else
+			local ok, reason = CombatService:ApplyTrainingPreset(player, presetId)
+			if not ok then
+				reject(entry, reason)
+			end
 		end
 	end
 end

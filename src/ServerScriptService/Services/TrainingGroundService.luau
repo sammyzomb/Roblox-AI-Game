@@ -3,10 +3,11 @@
 -- playable slice).
 --
 -- Owns only: player entry/exit into the training area, temporary session
--- state, HP/MP/Stamina resets, and cleanup on death/respawn/disconnect.
--- Everything else in the full #23 spec (attack dummies with server damage
--- display, timed practice source, training potions, class presets, rifles /
--- shields) is OUT OF SCOPE for this increment and is not implemented here.
+-- state, HP/MP/Stamina resets, cleanup on death/respawn/disconnect, and
+-- asking CombatService (through TrainingLifecycle) to apply or restore the
+-- temporary training hands. This service does not keep a second preset or
+-- session record. Rifles, training potions, and the preset picker UI are
+-- still not implemented here.
 -- Scene hookup (actual entrance/exit zone parts in a published place) is
 -- explicitly deferred to the next increment; CollectionService tag wiring
 -- below is idle until a map provides tagged parts.
@@ -48,6 +49,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local TrainingLifecycle = require(ReplicatedStorage.Shared.Combat.TrainingLifecycle)
+local TrainingLoadouts = require(ReplicatedStorage.Shared.Combat.TrainingLoadouts)
 
 local TrainingGroundService = {
 	Priority = 20, -- after CombatService (0) and TrainingDummyService (10)
@@ -220,6 +222,12 @@ function TrainingGroundService:Init(registry)
 		end,
 		ResetVitals = function(model: unknown)
 			return combat:ResetVitals(model :: Model)
+		end,
+		ApplyDefaultTrainingPreset = function(player: unknown)
+			return combat:ApplyTrainingPreset(player :: Player, TrainingLoadouts.DEFAULT_PRESET_ID)
+		end,
+		RestoreSavedLoadout = function(player: unknown)
+			return combat:RestorePersistentLoadout(player :: Player)
 		end,
 	})
 	combat:SetTrainingPredicate(function(player: Player): boolean
