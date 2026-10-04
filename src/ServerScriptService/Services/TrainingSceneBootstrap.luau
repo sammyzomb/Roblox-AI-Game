@@ -26,16 +26,17 @@
 --      the collision is resolved by hand), rather than risking destroying
 --      something a user placed.
 --   2. Once an owned container exists (fresh or from a prior boot), each
---      required child part is ensured individually by deterministic Name:
---      if missing, it is created; if present AND owned (see below), its
---      class/anchoring/collision/size/position/attributes/tag are repaired
---      in place; if present but NOT owned (e.g. a user renamed a plain Part
---      into the container with a colliding Name), it is left untouched and
---      a warning is printed, exactly like the container-level collision
---      case. "Owned" for a child means the instance has the
---      `TrainingSceneOwned = true` attribute this service itself sets - so a
---      child this service created on a previous boot is always safely
---      repairable, while anything else is never touched.
+--      required child is ensured individually by deterministic Name. A
+--      missing child is created as a Part. An owned Part is repaired in
+--      place. An owned child whose class is not Part is destroyed and
+--      recreated as a Part, because class cannot change in place. An
+--      unowned same-name object is left untouched and the warning says it
+--      is unowned; it is never destroyed. "Owned" means
+--      `TrainingSceneOwned = true`.
+--      Scene-role tags are only {TrainingEntrance, TrainingExit,
+--      TrainingReturnSpawn}. Each owned role pad keeps its own role and
+--      loses the other two. Debug parts (walkway, platform, dummy marker)
+--      keep none of the three. Tags outside that set are left in place.
 --   3. Running :Start() twice (duplicate boot in one process, or a second
 --      server start against the same saved Workspace) never duplicates
 --      parts, tags, or connections: every owned child is looked up by Name
@@ -56,6 +57,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local TrainingSceneConfig = require(ReplicatedStorage.Shared.Combat.TrainingSceneConfig)
+local TrainingSceneRepair = require(ReplicatedStorage.Shared.Combat.TrainingSceneRepair)
 
 local TrainingSceneBootstrap = {
 	Priority = 15, -- after CombatService (0) / TrainingDummyService (10), before TrainingGroundService (20)
@@ -65,29 +67,36 @@ local function vec(v: TrainingSceneConfig.Vec3): Vector3
 	return Vector3.new(v.X, v.Y, v.Z)
 end
 
--- Thin marker parts (entrance/exit/return-spawn) are small, walkable, and
--- visually distinct placeholder colors only so a tester can find them; not
--- an art deliverable.
-local MARKER_SIZE = Vector3.new(6, 1, 6)
-
 -- Declarative spec for every child this service owns inside the container.
--- `standY` is the desired WALKABLE surface Y (ground level for that point);
--- the actual Part center Y is derived via TrainingSceneConfig.restingCenterY
--- so every part models its own half-height correctly instead of repeating
--- ad-hoc `- size.Y/2` arithmetic per call site.
+-- Walkway and platform positions use restingCenterY so their tops stay at
+-- ground level. The three role markers use roleMarkerVolume so they stand
+-- on that surface instead of being embedded in it. Colors are placeholder
+-- only, so a tester can tell the volumes apart.
 type ChildSpec = {
 	Name: string,
-	Position: Vector3, -- standing-surface position (X/Z exact, Y = standY)
+	Position: Vector3,
 	Size: Vector3,
 	Color: Color3,
 	CanCollide: boolean,
-	Tag: string?, -- CollectionService tag this part must carry, if any
+	CanTouch: boolean,
+	Transparency: number,
+	Tag: string?, -- scene role this part must carry; nil strips all three roles
 	Attributes: { [string]: any }?,
 }
 
 local function buildChildSpecs(points: any): { ChildSpec }
 	local platformSize = vec(TrainingSceneConfig.Platform.Size)
 	local walkwaySize = vec(TrainingSceneConfig.Walkway.Size)
+	local surfaceTopY = TrainingSceneConfig.restingCenterY(
+		TrainingSceneConfig.GroundLevelY,
+		TrainingSceneConfig.Walkway.Size.Y
+	) + TrainingSceneConfig.Walkway.Size.Y / 2
+	local roleVolume = TrainingSceneConfig.roleMarkerVolume(surfaceTopY)
+	local roleSize = vec(roleVolume.size)
+
+	local function rolePosition(point: { X: number, Z: number }): Vector3
+		return Vector3.new(point.X, roleVolume.centerY, point.Z)
+	end
 
 	return {
 		{
@@ -100,6 +109,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Size = walkwaySize,
 			Color = Color3.fromRGB(110, 110, 110),
 			CanCollide = true,
+			CanTouch = true,
+			Transparency = 0,
 		},
 		{
 			Name = "TrainingPlatform",
@@ -111,41 +122,37 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Size = platformSize,
 			Color = Color3.fromRGB(120, 120, 130),
 			CanCollide = true,
+			CanTouch = true,
+			Transparency = 0,
 		},
 		{
 			Name = "TrainingEntrancePad",
-			Position = Vector3.new(
-				points.Entrance.X,
-				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
-				points.Entrance.Z
-			),
-			Size = MARKER_SIZE,
+			Position = rolePosition(points.Entrance),
+			Size = roleSize,
 			Color = Color3.fromRGB(70, 170, 90),
-			CanCollide = true,
+			CanCollide = roleVolume.canCollide,
+			CanTouch = roleVolume.canTouch,
+			Transparency = roleVolume.transparency,
 			Tag = "TrainingEntrance",
 		},
 		{
 			Name = "TrainingExitPad",
-			Position = Vector3.new(
-				points.Exit.X,
-				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
-				points.Exit.Z
-			),
-			Size = MARKER_SIZE,
+			Position = rolePosition(points.Exit),
+			Size = roleSize,
 			Color = Color3.fromRGB(170, 90, 70),
-			CanCollide = true,
+			CanCollide = roleVolume.canCollide,
+			CanTouch = roleVolume.canTouch,
+			Transparency = roleVolume.transparency,
 			Tag = "TrainingExit",
 		},
 		{
 			Name = "TrainingReturnSpawnPad",
-			Position = Vector3.new(
-				points.ReturnSpawn.X,
-				TrainingSceneConfig.restingCenterY(TrainingSceneConfig.GroundLevelY, MARKER_SIZE.Y),
-				points.ReturnSpawn.Z
-			),
-			Size = MARKER_SIZE,
+			Position = rolePosition(points.ReturnSpawn),
+			Size = roleSize,
 			Color = Color3.fromRGB(90, 120, 170),
-			CanCollide = true,
+			CanCollide = roleVolume.canCollide,
+			CanTouch = roleVolume.canTouch,
+			Transparency = roleVolume.transparency,
 			Tag = "TrainingReturnSpawn",
 		},
 		{
@@ -158,6 +165,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Size = Vector3.new(3, 0.2, 3),
 			Color = Color3.fromRGB(200, 170, 60),
 			CanCollide = false,
+			CanTouch = true,
+			Transparency = 0,
 			Attributes = { Purpose = "ReservedForStationaryDummy" },
 		},
 	}
@@ -190,36 +199,18 @@ local function findOrCreateOwnedContainer(): Folder?
 	return container
 end
 
--- Ensures exactly one child matching `spec` exists directly under
--- `container`: creates it if missing, repairs it in place if present and
--- owned, or leaves an unknown same-name object alone with a warning.
-local function ensureChild(container: Folder, spec: ChildSpec)
-	local existing = container:FindFirstChild(spec.Name)
-	local part: BasePart
-
-	if existing == nil then
-		part = Instance.new("Part")
-		part.Name = spec.Name
-		part:SetAttribute("TrainingSceneOwned", true)
-		part.Parent = container
-	elseif existing:IsA("BasePart") and existing:GetAttribute("TrainingSceneOwned") == true then
-		part = existing
-	else
-		warn(
-			`[Combat] Training scene bootstrap found an unowned object named "{spec.Name}" under `
-				.. `{TrainingSceneConfig.ContainerName}; leaving it unchanged and skipping repair for this child.`
-		)
-		return
-	end
-
+local function applyPartSettings(part: BasePart, spec: ChildSpec)
 	part.Anchored = true
 	part.CanCollide = spec.CanCollide
+	part.CanTouch = spec.CanTouch
+	part.Transparency = spec.Transparency
 	part.Size = spec.Size
 	part.Position = spec.Position
 	part.Color = spec.Color
 	part.Material = Enum.Material.SmoothPlastic
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
+	part:SetAttribute("TrainingSceneOwned", true)
 
 	if spec.Attributes then
 		for key, value in spec.Attributes do
@@ -227,11 +218,58 @@ local function ensureChild(container: Folder, spec: ChildSpec)
 		end
 	end
 
-	if spec.Tag then
-		-- AddTag is itself idempotent (adding an already-present tag is a
-		-- no-op), so repeated Start() calls never create duplicate tags.
-		CollectionService:AddTag(part, spec.Tag)
+	-- Remove stale scene roles before adding the expected one. AddTag and
+	-- RemoveTag are idempotent, so a second Start() does not duplicate tags.
+	local plan = TrainingSceneRepair.reconcileRoleTags(CollectionService:GetTags(part), spec.Tag)
+	for _, tag in plan.remove do
+		CollectionService:RemoveTag(part, tag)
 	end
+	for _, tag in plan.add do
+		CollectionService:AddTag(part, tag)
+	end
+end
+
+-- Ensures exactly one child matching `spec` exists directly under
+-- `container`. The repair action comes from TrainingSceneRepair so the
+-- Part policy and warning reason can be tested without Instances.
+local function ensureChild(container: Folder, spec: ChildSpec)
+	local existing = container:FindFirstChild(spec.Name)
+	local state: TrainingSceneRepair.ChildState? = nil
+	if existing ~= nil then
+		state = {
+			className = existing.ClassName,
+			owned = existing:GetAttribute("TrainingSceneOwned") == true,
+		}
+	end
+
+	local decision = TrainingSceneRepair.decideChildRepair(spec.Name, container.Name, state)
+	local action: TrainingSceneRepair.RepairAction = decision.action
+	if action == "skip" then
+		warn(decision.warning)
+		return
+	elseif action == "replace" then
+		warn(decision.warning)
+		if existing ~= nil then
+			existing:Destroy()
+		end
+		existing = nil
+	elseif action == "create" or action == "repair" then
+		-- Create and in-place repair share the settings application below.
+	else
+		local unhandled: never = action
+		error(`unhandled training scene child repair action "{unhandled}"`)
+	end
+
+	local part: BasePart
+	if existing == nil then
+		local created = Instance.new("Part")
+		created.Name = spec.Name
+		created.Parent = container
+		part = created
+	else
+		part = existing :: BasePart
+	end
+	applyPartSettings(part, spec)
 end
 
 function TrainingSceneBootstrap:Init(_registry)
