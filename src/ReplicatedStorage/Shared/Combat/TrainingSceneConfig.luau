@@ -42,7 +42,8 @@ TrainingSceneConfig.ContainerName = "TrainingGroundScene"
 
 -- Attribute written to the container so repeated server starts (and a
 -- human inspecting the place) can see which config version produced it.
-TrainingSceneConfig.SceneVersion = 2
+-- Version 3 raises the three role markers into above-surface touch volumes.
+TrainingSceneConfig.SceneVersion = 3
 
 -- Shared ground level every walkable surface in this scene sits at. A
 -- fresh Baseplate's top surface and a default SpawnLocation's standing
@@ -79,9 +80,23 @@ TrainingSceneConfig.WalkwayCenterOffset = {
 } :: Vec3
 
 -- Entrance / exit are simple deterministic offsets from Origin, within the
--- platform footprint (60x60) with margin.
+-- platform footprint (60x60) with margin. Their Y remains the walk-surface
+-- stand point. The trigger volume that sits on that point is RoleMarker,
+-- not an embedded copy of the walkway.
 TrainingSceneConfig.EntranceOffset = { X = -20, Y = 0, Z = 0 } :: Vec3
 TrainingSceneConfig.ExitOffset = { X = 20, Y = 0, Z = 0 } :: Vec3
+
+-- Visible non-colliding touch volume for TrainingEntrance, TrainingExit,
+-- and TrainingReturnSpawn. The bottom rests on the walkable surface and the
+-- top is above it, so the pad is no longer buried inside the walkway or
+-- platform. Horizontal size stays 6x6. CanCollide stays false so the walkway
+-- and platform remain the ordinary walking surfaces.
+TrainingSceneConfig.RoleMarker = {
+	Size = { X = 6, Y = 1, Z = 6 } :: Vec3,
+	CanCollide = false,
+	CanTouch = true,
+	Transparency = 0,
+}
 
 -- Return spawn sits on the WORLD-SIDE walkway, near (but not overlapping)
 -- default spawn, at the same ground level — never on the training platform
@@ -109,6 +124,35 @@ end
 -- share one half-height formula instead of re-deriving it inconsistently.
 function TrainingSceneConfig.restingCenterY(standY: number, fullHeightY: number): number
 	return standY - fullHeightY / 2
+end
+
+export type RoleMarkerVolume = {
+	centerY: number,
+	bottom: number,
+	top: number,
+	size: Vec3,
+	canCollide: boolean,
+	canTouch: boolean,
+	transparency: number,
+}
+
+-- Places a role-marker volume on a walkable surface. `surfaceTopY` is the
+-- top of the part the character actually walks on (walkway or platform).
+-- The volume's bottom is that surface, so it is not embedded below it.
+function TrainingSceneConfig.roleMarkerVolume(surfaceTopY: number): RoleMarkerVolume
+	local marker = TrainingSceneConfig.RoleMarker
+	local height = marker.Size.Y
+	local bottom = surfaceTopY
+	local top = surfaceTopY + height
+	return {
+		centerY = bottom + height / 2,
+		bottom = bottom,
+		top = top,
+		size = marker.Size,
+		canCollide = marker.CanCollide,
+		canTouch = marker.CanTouch,
+		transparency = marker.Transparency,
+	}
 end
 
 -- Resolves every named point as an absolute STANDING position (i.e. the

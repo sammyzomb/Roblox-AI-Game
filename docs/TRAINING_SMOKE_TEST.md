@@ -169,11 +169,12 @@ is enterable in a FRESH Studio place with no manual level-authoring.
   `TrainingDummyMarker` part (`Purpose = "ReservedForStationaryDummy"
   attribute, NOT one of the three CollectionService tags
   `TrainingGroundService` listens for) at the configured `DummyMarkerOffset`.
-  **Missing API, stated precisely:** `TrainingDummyService` needs a public
-  `SpawnAt(position, spec)`-style entry point (or its `DUMMIES` table needs a
-  scene-provided position) before a stationary dummy can be bootstrapped
-  onto this marker without duplicating dummy-spawning logic. No second
-  dummy/combat system was created to work around this.
+  **Superseded by the fourth pass — this is not a current API gap.** The
+  third pass said `TrainingDummyService` needed a public `SpawnAt(position,
+  spec)` entry point, or a scene-provided position in `DUMMIES`, before a
+  stationary dummy could be bootstrapped onto the marker. The fourth pass
+  already spawns that dummy through the existing `spawnDummy` path at
+  `DummyMarker`. Do not treat this paragraph as an open Missing API.
 - No art/materials/mesh pass: parts are plain anchored `Part`s with flat
   `Color3` values only, per the assignment's "no art polish or external
   assets" instruction.
@@ -220,10 +221,10 @@ the task; it is not evidence of a passed test.
 
 Per the assignment's explicit scope list, the following remain open and are
 NOT claimed as complete by this change:
-- Visible server damage display against a dummy (no stationary dummy is
-  actually spawned yet by this increment — see "Missing API" above; once a
-  dummy exists, damage numbers themselves depend on existing
-  `CombatService` `Hit` broadcast + HUD wiring, not new server logic).
+- Visible server damage display against a dummy. The third-pass Missing API
+  note above was superseded by the fourth pass, which spawns the scene dummy
+  through the existing `spawnDummy` path. Damage numbers themselves still
+  depend on the existing `CombatService` `Hit` broadcast and HUD wiring.
 - A timed attack-practice source for blocking/shield practice.
 - Temporary training potions (non-persistent consumable stock).
 - Sword / Mage / Archer preset loadouts.
