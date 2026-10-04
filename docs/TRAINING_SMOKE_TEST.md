@@ -1,5 +1,49 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Damage float pass (server Hit presentation only)
+
+Shows the damage number the server already broadcasts on `CombatEvent`
+`Kind = "Hit"`. The client reads `Damage`, and when those fields are
+present and finite, `Blocked` and `Absorbed`. It does not recompute the
+hit, and it does not add a damage remote. A short `BillboardGui` is
+parented to the target's `Head`, `HumanoidRootPart`, or `PrimaryPart`.
+
+Pure tests in `tests/damage_float_spec.luau` cover label text, rejection of
+malformed numbers, and the simultaneous-label cap. They do **not** create
+Instances and do **not** prove `BillboardGui`, `TweenService` (unused),
+Adornee lookup, or cleanup when a character respawns or a model is
+destroyed. This pass does not use `TweenService`.
+
+Older sections below that say damage numbers are not implemented describe
+the passes that wrote them. This section is the current presentation slice.
+It is not a playable-training claim.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Sync this branch and start Play Solo. Walk to the Studio training dummy
+   at `TrainingDummyMarker`.
+2. Use the existing melee attack (left click / Attack). A short floating
+   label above the dummy must show the server `Damage` from that `Hit`.
+   The number is the server value, not a client-side estimate.
+3. **Close range:** stand against the dummy and attack again. The label
+   stays readable above the head or root and does not throw.
+4. **Consecutive attacks:** land several hits quickly. Labels expire on
+   their own, and they do not accumulate without a bound. After they
+   expire, no `ServerDamageFloat` remains.
+5. **Target death or destroy:** kill the dummy, or delete the target model
+   in Explorer while a label is visible. Output stays quiet, and the label
+   is gone with the target.
+6. **Respawn:** reset the player character while a label is visible on the
+   dummy. The new character has no leftover damage label or connection
+   error. If a hit lands on the player, resetting also clears that label.
+7. **Phone readability:** use a phone viewport or device emulator. The
+   damage text is still large enough to read at melee range.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Fourth pass (this assignment: fix-training-scene-reachability-ensure-dummy)
 
 Bounded correctness pass on top of the third pass below, per Technical
@@ -134,7 +178,9 @@ wiring beyond the existing `Hit` broadcast, the timed attack-practice
 source for blocking/shield practice, temporary training potions, Sword/Mage/
 Archer preset loadouts, the Magadou rifle weapon/ammo/reload behavior, and
 the full Studio playable acceptance pass. This pass adds one working scene
-dummy at the marker point but does not add new damage-display UI.
+   dummy at the marker point but does not add new damage-display UI.
+   The later damage-float pass at the top of this file adds that
+   presentation. Its Studio steps are still unrun.
 
 ## Third pass (training-scene-bootstrap, now superseded in part by the fourth pass above)
 
@@ -223,8 +269,9 @@ Per the assignment's explicit scope list, the following remain open and are
 NOT claimed as complete by this change:
 - Visible server damage display against a dummy. The third-pass Missing API
   note above was superseded by the fourth pass, which spawns the scene dummy
-  through the existing `spawnDummy` path. Damage numbers themselves still
-  depend on the existing `CombatService` `Hit` broadcast and HUD wiring.
+  through the existing `spawnDummy` path. The damage-float pass at the top
+  of this file reads the existing `CombatService` `Hit` broadcast. Studio
+  confirmation of that label is still unrun.
 - A timed attack-practice source for blocking/shield practice.
 - Temporary training potions (non-persistent consumable stock).
 - Sword / Mage / Archer preset loadouts.

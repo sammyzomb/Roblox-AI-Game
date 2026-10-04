@@ -123,6 +123,9 @@ require("./training_lifecycle_spec")(test, eq)
 -- training-scene-bootstrap)
 require("./training_scene_config_spec")(test, eq)
 
+-- Server Hit damage labels (Issue #23). Pure text only; no BillboardGui.
+require("./damage_float_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")
