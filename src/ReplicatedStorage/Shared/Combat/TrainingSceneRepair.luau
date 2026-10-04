@@ -4,7 +4,14 @@
 -- The bootstrap service applies this plan to real Instances. The plan has
 -- no Roblox API, so unit tests can cover the finite role-tag set and the
 -- Part rebuild policy. Tests still cannot prove CollectionService,
--- BasePart.Touched, or Destroy; those stay Studio checks.
+-- BasePart.Touched, Destroy, or that a tag listener observes a configured
+-- Instance. Those stay Studio checks.
+--
+-- Replacing an owned non-Part does not keep the old Instance. The
+-- replacement tag list is the snapshot's non-role tags plus at most the
+-- expected scene role. Debug parts keep none of the three roles. Wrong
+-- scene roles are dropped. Skip and in-place repair do not carry a
+-- replacement tag list, so an unowned name collision is left unchanged.
 
 local TrainingSceneRepair = {}
 
@@ -36,6 +43,15 @@ export type RepairAction = "create" | "repair" | "replace" | "skip"
 export type RepairDecision = {
 	action: RepairAction,
 	warning: string?,
+}
+
+-- `tags` is set only for action "replace": the tags to add after the new
+-- Part is configured and parented. Nil for create, in-place repair, and
+-- skip. An unowned collision therefore has no tag rewrite in the plan.
+export type ClassReplacementPlan = {
+	action: RepairAction,
+	warning: string?,
+	tags: { string }?,
 }
 
 -- `expectedTag` nil means a debug part that must carry none of the three
@@ -111,6 +127,39 @@ function TrainingSceneRepair.decideChildRepair(name: string, containerName: stri
 	end
 
 	return { action = "repair" }
+end
+
+-- Tags the new Part should carry after an owned class replacement.
+-- Non-role tags stay, in their original order. The finite role set keeps
+-- only `expectedTag` (or none, when that is nil). Wrong scene roles are
+-- not copied onto the replacement.
+function TrainingSceneRepair.replacementTags(currentTags: { string }, expectedTag: string?): { string }
+	return TrainingSceneRepair.applyRoleTags(currentTags, TrainingSceneRepair.reconcileRoleTags(currentTags, expectedTag))
+end
+
+-- Combines the class decision with the replacement tag list. Callers that
+-- skip or repair in place get no `tags` field, so they cannot apply a
+-- rebuilt tag set to an object this plan did not replace.
+function TrainingSceneRepair.planClassReplacement(
+	name: string,
+	containerName: string,
+	existing: ChildState?,
+	currentTags: { string },
+	expectedTag: string?
+): ClassReplacementPlan
+	local decision = TrainingSceneRepair.decideChildRepair(name, containerName, existing)
+	if decision.action ~= "replace" then
+		return {
+			action = decision.action,
+			warning = decision.warning,
+		}
+	end
+
+	return {
+		action = "replace",
+		warning = decision.warning,
+		tags = TrainingSceneRepair.replacementTags(currentTags, expectedTag),
+	}
 end
 
 return TrainingSceneRepair

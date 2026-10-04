@@ -29,14 +29,20 @@
 --      required child is ensured individually by deterministic Name. A
 --      missing child is created as a Part. An owned Part is repaired in
 --      place. An owned child whose class is not Part is destroyed and
---      recreated as a Part, because class cannot change in place. An
---      unowned same-name object is left untouched and the warning says it
---      is unowned; it is never destroyed. "Owned" means
+--      recreated as a Part, because class cannot change in place. Before
+--      that destroy, this service snapshots that object's own tags. The
+--      new Part is configured and parented first, then those tags are
+--      applied: non-role tags are kept, the finite role set keeps only
+--      this child's spec tag, and debug parts keep none of the three
+--      roles. Wrong scene roles are not copied. An unowned same-name
+--      object is left untouched and the warning says it is unowned; it
+--      is never destroyed and its tags are not rewritten. "Owned" means
 --      `TrainingSceneOwned = true`.
 --      Scene-role tags are only {TrainingEntrance, TrainingExit,
 --      TrainingReturnSpawn}. Each owned role pad keeps its own role and
 --      loses the other two. Debug parts (walkway, platform, dummy marker)
---      keep none of the three. Tags outside that set are left in place.
+--      keep none of the three. Tags outside that set are left in place
+--      on an in-place repair, and copied onto a class replacement.
 --   3. Running :Start() twice (duplicate boot in one process, or a second
 --      server start against the same saved Workspace) never duplicates
 --      parts, tags, or connections: every owned child is looked up by Name
@@ -217,14 +223,24 @@ local function applyPartSettings(part: BasePart, spec: ChildSpec)
 			part:SetAttribute(key, value)
 		end
 	end
+end
 
-	-- Remove stale scene roles before adding the expected one. AddTag and
-	-- RemoveTag are idempotent, so a second Start() does not duplicate tags.
-	local plan = TrainingSceneRepair.reconcileRoleTags(CollectionService:GetTags(part), spec.Tag)
+-- Tags are applied only after size, position, collision, and attributes
+-- are set, and after a new Part has been parented. CollectionService
+-- listeners therefore observe a configured object. AddTag and RemoveTag
+-- are idempotent, so a second Start() does not duplicate tags.
+local function applyReconciledTags(part: BasePart, expectedTag: string?)
+	local plan = TrainingSceneRepair.reconcileRoleTags(CollectionService:GetTags(part), expectedTag)
 	for _, tag in plan.remove do
 		CollectionService:RemoveTag(part, tag)
 	end
 	for _, tag in plan.add do
+		CollectionService:AddTag(part, tag)
+	end
+end
+
+local function applyReplacementTags(part: BasePart, tags: { string })
+	for _, tag in tags do
 		CollectionService:AddTag(part, tag)
 	end
 end
@@ -242,7 +258,12 @@ local function ensureChild(container: Folder, spec: ChildSpec)
 		}
 	end
 
-	local decision = TrainingSceneRepair.decideChildRepair(spec.Name, container.Name, state)
+	local currentTags: { string } = {}
+	if existing ~= nil then
+		currentTags = CollectionService:GetTags(existing)
+	end
+
+	local decision = TrainingSceneRepair.planClassReplacement(spec.Name, container.Name, state, currentTags, spec.Tag)
 	local action: TrainingSceneRepair.RepairAction = decision.action
 	if action == "skip" then
 		warn(decision.warning)
@@ -261,15 +282,29 @@ local function ensureChild(container: Folder, spec: ChildSpec)
 	end
 
 	local part: BasePart
+	local parentAfterSettings = false
 	if existing == nil then
 		local created = Instance.new("Part")
 		created.Name = spec.Name
-		created.Parent = container
 		part = created
+		parentAfterSettings = true
 	else
 		part = existing :: BasePart
 	end
 	applyPartSettings(part, spec)
+	if parentAfterSettings then
+		part.Parent = container
+	end
+
+	if action == "replace" then
+		local tags = decision.tags
+		if tags == nil then
+			error(`owned class replacement for "{spec.Name}" is missing its tag snapshot`)
+		end
+		applyReplacementTags(part, tags)
+	else
+		applyReconciledTags(part, spec.Tag)
+	end
 end
 
 function TrainingSceneBootstrap:Init(_registry)

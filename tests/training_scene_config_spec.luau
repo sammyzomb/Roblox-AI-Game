@@ -2,8 +2,12 @@
 -- (Task #23 scene correction). No Roblox services involved.
 --
 -- These tests do not create Instances. They do not prove CollectionService
--- tag calls, BasePart.Touched, CanCollide/CanTouch engine behavior, or
--- Destroy/recreate of a live child. Those remain Studio checks.
+-- tag calls, BasePart.Touched, CanCollide/CanTouch engine behavior,
+-- Destroy/recreate of a live child, or that a tag listener observes a
+-- configured Instance. Those remain Studio checks.
+--
+-- Class-replacement cases below are pure plans: they assert the tag list
+-- a rebuilt Part should receive. They do not construct a Roblox Instance.
 --
 -- These tests specifically assert the REVISED walkable-entry geometry: a
 -- single shared ground level with no floating platform, a walkway that
@@ -297,5 +301,119 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(hasText(folder.warning :: string, "unowned"), true, "reason is the missing ownership")
 		eq(hasText(folder.warning :: string, "replacing"), false, "unowned folder is not described as a replace")
 		eq(hasText(folder.warning :: string, "Folder"), true, "warning names Folder")
+	end)
+
+	local function sameTags(actual: { string }, expected: { string }, what: string)
+		eq(#actual, #expected, `{what} count`)
+		for index, tag in expected do
+			eq(actual[index], tag, `{what} tag {index}`)
+		end
+	end
+
+	local function requireReplacementTags(plan: any): { string }
+		local tags = plan.tags
+		if tags == nil then
+			error("class replacement plan is missing its tag list", 2)
+		end
+		return tags
+	end
+
+	-- Pure plan only. No Instance, Destroy, or CollectionService call.
+	test("owned wrong-class role rebuild keeps third-party tags and only the expected role", function()
+		local snapshot = { "TrainingExit", "PluginLight", "VendorBillboard", "PluginLight" }
+		local plan = TrainingSceneRepair.planClassReplacement("TrainingEntrancePad", "TrainingGroundScene", {
+			className = "Folder",
+			owned = true,
+		}, snapshot, "TrainingEntrance")
+		eq(plan.action, "replace", "owned Folder is a replacement")
+		eq(hasText(plan.warning :: string, "owned"), true, "warning says owned")
+		eq(hasText(plan.warning :: string, "unowned"), false, "owned rebuild is not called unowned")
+		local tags = requireReplacementTags(plan)
+		sameTags(tags, { "PluginLight", "VendorBillboard", "TrainingEntrance" }, "role replacement")
+		eq(has(tags, "TrainingExit"), false, "wrong entrance-pad role is not copied")
+		eq(has(tags, "TrainingReturnSpawn"), false, "return role is not copied")
+		eq(snapshot[1], "TrainingExit", "snapshot itself is not rewritten")
+
+		local repeated = TrainingSceneRepair.planClassReplacement("TrainingEntrancePad", "TrainingGroundScene", {
+			className = "Folder",
+			owned = true,
+		}, snapshot, "TrainingEntrance")
+		sameTags(requireReplacementTags(repeated), tags, "planning the same snapshot twice")
+	end)
+
+	-- Pure plan only. No Instance, Destroy, or CollectionService call.
+	test("owned wrong-class debug rebuild keeps third-party tags and drops every scene role", function()
+		local snapshot = { "TrainingEntrance", "DebugBeacon", "TrainingExit", "TrainingReturnSpawn" }
+		local plan = TrainingSceneRepair.planClassReplacement("TrainingDummyMarker", "TrainingGroundScene", {
+			className = "MeshPart",
+			owned = true,
+		}, snapshot, nil)
+		eq(plan.action, "replace", "owned debug MeshPart is a replacement")
+		local tags = requireReplacementTags(plan)
+		sameTags(tags, { "DebugBeacon" }, "debug replacement")
+		eq(has(tags, "TrainingEntrance"), false, "debug rebuild drops entrance")
+		eq(has(tags, "TrainingExit"), false, "debug rebuild drops exit")
+		eq(has(tags, "TrainingReturnSpawn"), false, "debug rebuild drops return")
+	end)
+
+	-- Pure plan only. The second call stands in for a later boot after the
+	-- replacement Part already carries the planned tags. It does not create
+	-- an Instance.
+	test("a repeated class repair does not add another tag change", function()
+		local roleTags = requireReplacementTags(TrainingSceneRepair.planClassReplacement("TrainingExitPad", "TrainingGroundScene", {
+			className = "Folder",
+			owned = true,
+		}, { "TrainingEntrance", "PluginLight" }, "TrainingExit"))
+		local roleAgain = TrainingSceneRepair.planClassReplacement("TrainingExitPad", "TrainingGroundScene", {
+			className = "Part",
+			owned = true,
+		}, roleTags, "TrainingExit")
+		eq(roleAgain.action, "repair", "rebuilt role Part stays in place")
+		eq(roleAgain.tags, nil, "in-place repair has no replacement tag list")
+		local roleDelta = TrainingSceneRepair.reconcileRoleTags(roleTags, "TrainingExit")
+		eq(#roleDelta.add, 0, "second role repair adds nothing")
+		eq(#roleDelta.remove, 0, "second role repair removes nothing")
+		sameTags(TrainingSceneRepair.replacementTags(roleTags, "TrainingExit"), roleTags, "role tags stay stable")
+
+		local debugTags = requireReplacementTags(TrainingSceneRepair.planClassReplacement("TrainingWalkway", "TrainingGroundScene", {
+			className = "Folder",
+			owned = true,
+		}, { "TrainingReturnSpawn", "DebugBeacon" }, nil))
+		local debugAgain = TrainingSceneRepair.planClassReplacement("TrainingWalkway", "TrainingGroundScene", {
+			className = "Part",
+			owned = true,
+		}, debugTags, nil)
+		eq(debugAgain.action, "repair", "rebuilt debug Part stays in place")
+		eq(debugAgain.tags, nil, "debug in-place repair has no replacement tag list")
+		local debugDelta = TrainingSceneRepair.reconcileRoleTags(debugTags, nil)
+		eq(#debugDelta.add, 0, "second debug repair adds nothing")
+		eq(#debugDelta.remove, 0, "second debug repair removes nothing")
+		eq(has(debugTags, "DebugBeacon"), true, "debug third-party tag survived")
+		eq(has(debugTags, "TrainingReturnSpawn"), false, "debug role stayed off")
+	end)
+
+	-- Pure plan only. Unowned objects are not given a tag rewrite, which is
+	-- the plan-level stand-in for leaving the live object untouched.
+	test("unowned name collisions are not given a replacement tag plan", function()
+		local roleSnapshot = { "TrainingExit", "PluginLight" }
+		local unownedPart = TrainingSceneRepair.planClassReplacement("TrainingReturnSpawnPad", "TrainingGroundScene", {
+			className = "Part",
+			owned = false,
+		}, roleSnapshot, "TrainingReturnSpawn")
+		eq(unownedPart.action, "skip", "unowned Part is not replaced")
+		eq(unownedPart.tags, nil, "unowned Part has no replacement tags")
+		eq(hasText(unownedPart.warning :: string, "unowned"), true, "warning says unowned")
+		eq(hasText(unownedPart.warning :: string, "leaving it unchanged"), true, "warning leaves it unchanged")
+		sameTags(roleSnapshot, { "TrainingExit", "PluginLight" }, "unowned part snapshot")
+
+		local debugSnapshot = { "TrainingEntrance", "DebugBeacon", "TrainingExit" }
+		local unownedFolder = TrainingSceneRepair.planClassReplacement("TrainingDummyMarker", "TrainingGroundScene", {
+			className = "Folder",
+			owned = false,
+		}, debugSnapshot, nil)
+		eq(unownedFolder.action, "skip", "unowned wrong class is not replaced")
+		eq(unownedFolder.tags, nil, "unowned folder has no replacement tags")
+		eq(hasText(unownedFolder.warning :: string, "replacing"), false, "unowned folder is not a replace")
+		sameTags(debugSnapshot, { "TrainingEntrance", "DebugBeacon", "TrainingExit" }, "unowned folder snapshot")
 	end)
 end
