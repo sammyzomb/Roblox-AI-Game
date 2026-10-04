@@ -12,6 +12,17 @@
 -- "Attack" uses the main-hand attack named "Primary" (or the first by name),
 -- "Skill" uses the next main-hand attack, "Off-hand" the first off-hand attack.
 -- The server validates everything; this only avoids pointless requests.
+--
+-- Public API:
+--   CombatController.equip(slot, itemId | false)
+--   CombatController.useItem(itemId)
+--   CombatController.selectTrainingPreset(presetId)
+--       Sends the existing CombatRequest action "TrainingPreset".
+--       There is no selector UI and no extra touch button in this module.
+--   CombatController.raycast(origin, direction) -> Vector3
+--
+-- A validated CombatEvent { Kind = "Loadout", MainHand, OffHand } replaces
+-- the local attack map. A malformed Loadout event leaves the map as it was.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -22,6 +33,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net"))
 local Definitions = require(Shared:WaitForChild("Combat"):WaitForChild("Definitions"))
+local TrainingLoadouts = require(Shared:WaitForChild("Combat"):WaitForChild("TrainingLoadouts"))
 local DamageFloatView = require(script.Parent.Parent:WaitForChild("DamageFloatView"))
 
 local CombatController = {}
@@ -114,6 +126,10 @@ function CombatController.useItem(itemId: string)
 	request:FireServer({ Action = "UseItem", ItemId = itemId })
 end
 
+function CombatController.selectTrainingPreset(presetId: string)
+	request:FireServer({ Action = TrainingLoadouts.SELECTION_ACTION, PresetId = presetId })
+end
+
 function CombatController:Init()
 	request = Net.event(Net.Names.CombatRequest)
 end
@@ -154,7 +170,9 @@ function CombatController:Start()
 	Net.event(Net.Names.CombatEvent).OnClientEvent:Connect(function(event)
 		-- Presentation hook: animations, VFX and SFX attach here (see docs/COMBAT_API.md).
 		-- Hit labels read the server payload only. They do not recompute damage.
-		if type(event) == "table" and event.Kind == "Rejected" then
+		if type(event) == "table" and event.Kind == "Loadout" then
+			loadout = TrainingLoadouts.applyPresentedLoadout(loadout, event)
+		elseif type(event) == "table" and event.Kind == "Rejected" then
 			print(`[Combat] {event.Reason}`)
 		end
 		DamageFloatView.present(event)

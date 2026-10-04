@@ -126,6 +126,10 @@ require("./training_scene_config_spec")(test, eq)
 -- Server Hit damage labels (Issue #23). Pure text only; no BillboardGui.
 require("./damage_float_spec")(test, eq)
 
+-- Temporary training presets (Issue #23). Pure ids, compatibility, and
+-- in-memory hand replacement. No PlayerData writes and no Roblox instances.
+require("./training_loadouts_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")

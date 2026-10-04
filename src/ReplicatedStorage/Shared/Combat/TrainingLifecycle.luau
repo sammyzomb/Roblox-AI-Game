@@ -21,8 +21,12 @@
 --      recreate playerRuleset state for a player who is gone.
 --
 -- A thin "combat" dependency (SetRuleset/ResetVitals/GetRuleset/
--- GetCombatant) is injected so tests can supply a fake without any Roblox
--- services; TrainingGroundService injects the real CombatService.
+-- GetCombatant/ApplyDefaultTrainingPreset/RestoreSavedLoadout) is injected
+-- so tests can supply a fake without any Roblox services;
+-- TrainingGroundService injects the real CombatService. This module does
+-- not store a second copy of the chosen preset: the live combatant loadout
+-- is the only copy, and a re-entry while the session is already active does
+-- not apply the default preset again.
 --
 -- Dual-environment load (production correction): this module is required
 -- both by Roblox (TrainingGroundService.luau, via `script.Parent`) and by
@@ -59,6 +63,12 @@ export type CombatAdapter = {
 	GetRuleset: (player: PlayerId) -> string,
 	SetRuleset: (player: PlayerId, rulesetId: string) -> (),
 	ResetVitals: (model: CharacterId) -> boolean,
+	-- First successful entry only. Must be called after membership is claimed
+	-- so CombatService's training predicate can see the session.
+	ApplyDefaultTrainingPreset: (player: PlayerId) -> (boolean, string?),
+	-- Live manual exit, and rollback when the initial preset fails.
+	-- Death, respawn, and disconnect must not call this.
+	RestoreSavedLoadout: (player: PlayerId) -> (boolean, string?),
 }
 
 export type Lifecycle = {
@@ -130,6 +140,23 @@ function TrainingLifecycle.Enter(self: Lifecycle, player: PlayerId, character: C
 	-- may ever trigger a restore for this player.
 	self._generation[player] = character
 	self._combat.SetRuleset(player, TRAINING_RULESET)
+	if not alreadyTraining then
+		-- Membership is already claimed, so the combat service can see an
+		-- active training session. A later Enter in this same session must
+		-- not apply the default preset again.
+		local applied, applyWhy = self._combat.ApplyDefaultTrainingPreset(player)
+		if not applied then
+			local prior = self._session:Exit(player)
+			self._generation[player] = nil
+			if not self._departed[player] then
+				if prior ~= nil then
+					self._combat.SetRuleset(player, prior)
+				end
+				self._combat.RestoreSavedLoadout(player)
+			end
+			return false, applyWhy or "PresetFailed"
+		end
+	end
 	return true, nil
 end
 
@@ -160,6 +187,20 @@ end
 -- restore/session cleanup in place (it is not safe or necessary to undo).
 function TrainingLifecycle.Exit(self: Lifecycle, player: PlayerId, character: CharacterId?): (boolean, string?)
 	local wasTraining = self._session:IsTraining(player)
+	-- A live manual exit restores the saved loadout before the session is
+	-- dropped. If that restore fails, membership and the Training ruleset
+	-- stay in place so play does not resume on training gear. Death and
+	-- disconnect do not use Exit; they leave the fresh character on the
+	-- existing saved-loadout spawn path.
+	if wasTraining and character ~= nil and not self._departed[player] then
+		local resetOk = self._combat.ResetVitals(character)
+		if resetOk then
+			local restored, restoreWhy = self._combat.RestoreSavedLoadout(player)
+			if not restored then
+				return false, restoreWhy or "RestoreFailed"
+			end
+		end
+	end
 	local ok, why = restore(self, player)
 	if not ok then
 		return false, why

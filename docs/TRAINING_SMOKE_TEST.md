@@ -1,5 +1,60 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Training preset pass (temporary Swordsman / Mage / Archer hands)
+
+Server-owned, in-memory loadouts for an active training session. The first
+successful enter applies Swordsman (`training_sword` + `wooden_shield`).
+While that same session stays active, another enter does not put Swordsman
+back. A future UI can ask for Mage (`ember_staff`) or Archer (`hunting_bow`)
+through the existing `CombatRequest` action `TrainingPreset`. There is no
+selector button in this pass. Manual exit reads the saved `PlayerData`
+hands back onto the live combatant and does not call `PlayerDataService:Update`.
+Death, respawn, and disconnect do not persist the training hands; a new
+character still uses the existing saved-loadout spawn path.
+
+Pure tests cover preset ids, hand compatibility, malformed requests,
+in-memory rollback, and lifecycle ordering. They do **not** create
+Instances and do **not** prove remotes, touch controls, or character
+respawn in Studio.
+
+The approved rifle is still not in `Data/Weapons.luau`. This pass does not
+add one.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Note the player's saved `Loadout` before entering training (command bar
+   or `PlayerDataService:Get`).
+2. Walk onto `TrainingEntrancePad`. The live hands become the training
+   sword and wooden shield, even if the saved loadout was something else.
+   Saved `PlayerData.Loadout` is unchanged.
+3. While still inside the same session, touch the entrance again. The
+   hands stay on whatever preset is currently equipped. They do not snap
+   back to Swordsman if a later step already changed them.
+4. From the client, send `CombatRequest`
+   `{ Action = "TrainingPreset", PresetId = "Mage" }` (there is still no
+   on-screen selector). Hands become the ember staff only.
+5. Send `{ Action = "TrainingPreset", PresetId = "Archer" }`. Hands become
+   the hunting bow only.
+6. Send `{ Action = "TrainingPreset", PresetId = "Rifle" }` and
+   `{ Action = "Equip", Slot = "MainHand", ItemId = "iron_greatsword" }`.
+   Both are rejected. Saved `Loadout` and `Consumables` stay unchanged.
+7. Walk onto `TrainingExitPad`. The live hands match the saved loadout from
+   step 1, and the saved record itself was not overwritten with the bow.
+8. Enter again, switch to Mage, then die. After respawn, the new character
+   is wearing the saved loadout, not the ember staff, and is not left in
+   the Training ruleset.
+9. Enter again and disconnect without using the exit pad. Rejoin. The new
+   session is not wearing the training preset, and Output has no error from
+   recreating that player.
+10. Phone / touch layout: confirm there is still no always-visible preset
+    selector. Attack, Skill, Off, Block, and Potion are unchanged.
+11. Rifle: confirm no rifle weapon was added and no preset selects one.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Damage float pass (server Hit presentation only)
 
 Shows the damage number the server already broadcasts on `CombatEvent`
