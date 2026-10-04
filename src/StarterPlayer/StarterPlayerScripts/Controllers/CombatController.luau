@@ -22,6 +22,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net"))
 local Definitions = require(Shared:WaitForChild("Combat"):WaitForChild("Definitions"))
+local DamageFloatView = require(script.Parent.Parent:WaitForChild("DamageFloatView"))
 
 local CombatController = {}
 
@@ -152,9 +153,11 @@ function CombatController:Start()
 
 	Net.event(Net.Names.CombatEvent).OnClientEvent:Connect(function(event)
 		-- Presentation hook: animations, VFX and SFX attach here (see docs/COMBAT_API.md).
+		-- Hit labels read the server payload only. They do not recompute damage.
 		if type(event) == "table" and event.Kind == "Rejected" then
 			print(`[Combat] {event.Reason}`)
 		end
+		DamageFloatView.present(event)
 	end)
 end
 
