@@ -39,9 +39,11 @@
 --   { Action = "TrainingPreset", PresetId = "Swordsman"|"Mage"|"Archer" }
 --       In-memory only, and only while the training predicate is true.
 -- CombatEvent (server -> clients) carries presentation data only (see broadcast calls).
--- A successful temporary apply or saved-hand restore also FireClient's
--- { Kind = "Loadout", MainHand = string|false, OffHand = string|false }
--- to the owning player. It is not broadcast.
+-- A successful temporary apply, saved-hand restore, or fresh-character
+-- saved equip also FireClient's
+-- { Kind = "Loadout", Temporary = boolean, MainHand = string|false, OffHand = string|false }
+-- to the owning player. Temporary is true only for a training preset.
+-- It is not broadcast.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -184,9 +186,10 @@ local function reject(entry: Entry, reason: string?)
 end
 
 -- Tells only the owning client which hands are actually equipped in memory.
--- Persistent StateChanged still describes saved PlayerData, which diverges
--- for the whole time a training preset is on.
-local function presentLoadout(entry: Entry)
+-- Temporary is true for a training preset and false for saved hands.
+-- Persistent StateChanged still describes saved PlayerData, so the client
+-- keeps a temporary map until a later event sets Temporary to false.
+local function presentLoadout(entry: Entry, temporary: boolean)
 	local player = entry.Player
 	if player == nil then
 		return
@@ -194,6 +197,7 @@ local function presentLoadout(entry: Entry)
 	local hands = entry.Combatant.Loadout
 	combatEvent:FireClient(player, {
 		Kind = "Loadout",
+		Temporary = temporary,
 		MainHand = if hands.MainHand then hands.MainHand.Id else false,
 		OffHand = if hands.OffHand then hands.OffHand.Id else false,
 	})
@@ -373,6 +377,9 @@ local function onCharacterAdded(player: Player, character: Model)
 	local entry = register(character, humanoid, root, combatant, player, rulesetId)
 	byPlayer[player] = entry
 	equipSavedLoadout(player, combatant)
+	-- The fresh character is on the saved loadout. Tell the owning client
+	-- so a temporary attack-map latch from the previous character clears.
+	presentLoadout(entry, false)
 end
 
 local function onPlayerDataLoaded(player: Player)
@@ -705,7 +712,7 @@ function CombatService:ApplyTrainingPreset(player: Player, presetId: unknown): (
 	if not applied then
 		return false, reason
 	end
-	presentLoadout(entry)
+	presentLoadout(entry, true)
 	return true, nil
 end
 
@@ -733,7 +740,7 @@ function CombatService:RestorePersistentLoadout(player: Player): (boolean, strin
 	if not restored then
 		return false, why
 	end
-	presentLoadout(entry)
+	presentLoadout(entry, false)
 	return true, nil
 end
 

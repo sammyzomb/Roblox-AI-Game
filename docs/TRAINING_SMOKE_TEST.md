@@ -12,10 +12,18 @@ hands back onto the live combatant and does not call `PlayerDataService:Update`.
 Death, respawn, and disconnect do not persist the training hands; a new
 character still uses the existing saved-loadout spawn path.
 
+The owning client receives `CombatEvent` `Kind = "Loadout"` with a required
+boolean `Temporary`. A training preset sets it true and latches the local
+attack map. While that latch is on, `StateChanged` and a late `GetState`
+must not put the saved loadout back. A saved-hand restore, and the
+saved-loadout equip on a fresh character, set `Temporary` false, replace
+the map, and clear the latch. A missing or non-boolean flag, a bad hand,
+or an unknown weapon id changes neither the map nor the latch.
+
 Pure tests cover preset ids, hand compatibility, malformed requests,
-in-memory rollback, and lifecycle ordering. They do **not** create
-Instances and do **not** prove remotes, touch controls, or character
-respawn in Studio.
+in-memory rollback, lifecycle ordering, and those attack-map orderings.
+They do **not** create Instances and do **not** prove remotes, touch
+controls, or character respawn in Studio.
 
 The approved rifle is still not in `Data/Weapons.luau`. This pass does not
 add one.
@@ -52,8 +60,21 @@ record exists, every step below is **未執行**.
 10. Phone / touch layout: confirm there is still no always-visible preset
     selector. Attack, Skill, Off, Block, and Potion are unchanged.
 11. Rifle: confirm no rifle weapon was added and no preset selects one.
+12. After step 4, while the ember staff is still the live training weapon,
+    let the initial `GetState` return late or cause a `StateChanged` that
+    only changes coins or XP. Attack and Skill must still use the staff.
+    They must not send the saved weapon's attack id. Saved
+    `PlayerData.Loadout` stays the pre-training loadout.
+13. Walk onto `TrainingExitPad`. The normal `Loadout` event
+    (`Temporary = false`) restores the saved hands. A later `StateChanged`
+    may repeat that saved loadout. Attack then uses the saved weapon.
+14. Enter again, switch to Archer, then reset the character. The new
+    character wears the saved loadout, and Attack uses that saved weapon
+    rather than the hunting bow.
 
 Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+Steps 12–14 are also **未執行**. The pure ordering tests do not prove
+remote delivery or respawn.
 
 ## Damage float pass (server Hit presentation only)
 

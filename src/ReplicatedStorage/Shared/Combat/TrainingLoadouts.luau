@@ -21,8 +21,17 @@
 --   TrainingLoadouts.compatibilityErrors(defs) -> { string }
 --   TrainingLoadouts.applyPreset(engine, combatant, presetId, now) -> (boolean, string?)
 --   TrainingLoadouts.equipSavedHands(engine, combatant, mainId, offId, profile, now) -> (boolean, string?)
+--   TrainingLoadouts.readLoadoutEvent(event) -> { Hands, Temporary }?
 --   TrainingLoadouts.presentedHands(event) -> { [string]: string }?
 --   TrainingLoadouts.applyPresentedLoadout(current, event) -> { [string]: string }
+--   TrainingLoadouts.emptyAttackMap() -> { Loadout, Temporary }
+--   TrainingLoadouts.applyPersistentAttackMap(state, playerState) -> state
+--   TrainingLoadouts.applyLoadoutEvent(state, event) -> state
+--       CombatController uses these three for its local attack map. A
+--       Temporary=true Loadout event latches the map. While that latch is
+--       set, PlayerData StateChanged and a late GetState result do not
+--       replace it. A valid Temporary=false event replaces the map and
+--       clears the latch. A malformed event changes neither.
 
 local CombatCore = require("./CombatCore")
 local Definitions = require("./Definitions")
@@ -34,6 +43,16 @@ type Engine = CombatCore.Engine
 type Profile = ProgressionGates.Profile
 
 export type PresentedHands = { [string]: string }
+
+export type ReadLoadout = {
+	Hands: PresentedHands,
+	Temporary: boolean,
+}
+
+export type AttackMap = {
+	Loadout: PresentedHands,
+	Temporary: boolean,
+}
 
 local PRESET_ITEMS: { [string]: { string } } = {
 	Swordsman = { "training_sword", "wooden_shield" },
@@ -264,15 +283,20 @@ local function presentedSlot(value: unknown): (string?, boolean)
 	return nil, false
 end
 
--- Owning-client CombatEvent shape: Kind "Loadout" plus both hand fields.
--- Each hand is either false (empty) or an existing weapon id. A malformed
--- event returns nil so the caller keeps its current map.
-function TrainingLoadouts.presentedHands(event: unknown): PresentedHands?
+-- Owning-client CombatEvent shape: Kind "Loadout", a boolean Temporary
+-- flag, and both hand fields. Each hand is either false (empty) or an
+-- existing weapon id. Missing or non-boolean Temporary, a bad hand, or an
+-- unknown weapon id returns nil so the caller keeps both its map and latch.
+function TrainingLoadouts.readLoadoutEvent(event: unknown): ReadLoadout?
 	if type(event) ~= "table" then
 		return nil
 	end
 	local payload = event :: { [unknown]: unknown }
 	if payload.Kind ~= "Loadout" then
+		return nil
+	end
+	local temporary = payload.Temporary
+	if type(temporary) ~= "boolean" then
 		return nil
 	end
 	local mainId, mainOk = presentedSlot(payload.MainHand)
@@ -280,29 +304,75 @@ function TrainingLoadouts.presentedHands(event: unknown): PresentedHands?
 	if not mainOk or not offOk then
 		return nil
 	end
-	local presented: PresentedHands = {}
+	local hands: PresentedHands = {}
 	if mainId ~= nil then
-		presented.MainHand = mainId
+		hands.MainHand = mainId
 	end
 	if offId ~= nil then
-		presented.OffHand = offId
+		hands.OffHand = offId
 	end
-	return presented
+	return { Hands = hands, Temporary = temporary }
+end
+
+function TrainingLoadouts.presentedHands(event: unknown): PresentedHands?
+	local read = TrainingLoadouts.readLoadoutEvent(event)
+	if read == nil then
+		return nil
+	end
+	return read.Hands
 end
 
 function TrainingLoadouts.applyPresentedLoadout(current: PresentedHands, event: unknown): PresentedHands
-	if type(event) ~= "table" then
+	local read = TrainingLoadouts.readLoadoutEvent(event)
+	if read == nil then
 		return current
 	end
-	local payload = event :: { [unknown]: unknown }
-	if payload.Kind ~= "Loadout" then
-		return current
+	return read.Hands
+end
+
+function TrainingLoadouts.emptyAttackMap(): AttackMap
+	return { Loadout = {}, Temporary = false }
+end
+
+local function persistentHands(loadout: { [unknown]: unknown }): PresentedHands
+	local hands: PresentedHands = {}
+	local main = loadout.MainHand
+	local off = loadout.OffHand
+	if type(main) == "string" then
+		hands.MainHand = main
 	end
-	local presented = TrainingLoadouts.presentedHands(event)
-	if presented == nil then
-		return current
+	if type(off) == "string" then
+		hands.OffHand = off
 	end
-	return presented
+	return hands
+end
+
+-- PlayerData snapshots always describe the saved loadout. They must not
+-- replace a temporary training map. A snapshot with no Loadout table is
+-- ignored either way, matching the previous client check.
+function TrainingLoadouts.applyPersistentAttackMap(state: AttackMap, playerState: unknown): AttackMap
+	if state.Temporary then
+		return state
+	end
+	if type(playerState) ~= "table" then
+		return state
+	end
+	local payload = playerState :: { [unknown]: unknown }
+	local loadout = payload.Loadout
+	if type(loadout) ~= "table" then
+		return state
+	end
+	return { Loadout = persistentHands(loadout :: { [unknown]: unknown }), Temporary = false }
+end
+
+-- A valid Loadout event replaces the map and sets the latch from Temporary.
+-- Anything else, including a non-Loadout CombatEvent, returns the same state.
+function TrainingLoadouts.applyLoadoutEvent(state: AttackMap, event: unknown): AttackMap
+	local read = TrainingLoadouts.readLoadoutEvent(event)
+	if read == nil then
+		return state
+	end
+	return { Loadout = read.Hands, Temporary = read.Temporary }
 end
 
 local bootErrors = TrainingLoadouts.compatibilityErrors(Definitions.get())

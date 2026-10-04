@@ -249,6 +249,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		local current = { MainHand = "training_sword", OffHand = "wooden_shield" }
 		local kept = TrainingLoadouts.applyPresentedLoadout(current, {
 			Kind = "Loadout",
+			Temporary = true,
 			MainHand = 12,
 			OffHand = false,
 		})
@@ -257,6 +258,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 
 		local unknown = TrainingLoadouts.applyPresentedLoadout(current, {
 			Kind = "Loadout",
+			Temporary = true,
 			MainHand = "not_a_weapon",
 			OffHand = false,
 		})
@@ -264,20 +266,158 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 
 		local omitted = TrainingLoadouts.applyPresentedLoadout(current, {
 			Kind = "Loadout",
+			Temporary = true,
 			MainHand = "ember_staff",
 		})
 		eq(omitted, current)
+
+		local missingFlag = TrainingLoadouts.applyPresentedLoadout(current, {
+			Kind = "Loadout",
+			MainHand = "ember_staff",
+			OffHand = false,
+		})
+		eq(missingFlag, current)
 
 		local hit = TrainingLoadouts.applyPresentedLoadout(current, { Kind = "Hit", Damage = 4 })
 		eq(hit, current)
 
 		local presented = TrainingLoadouts.applyPresentedLoadout(current, {
 			Kind = "Loadout",
+			Temporary = true,
 			MainHand = "ember_staff",
 			OffHand = false,
 		})
 		eq(presented.MainHand, "ember_staff")
 		eq(presented.OffHand, nil)
 		eq(current.MainHand, "training_sword", "the previous map is not mutated")
+	end)
+
+	local function savedState(main: string?, off: string?)
+		local loadout = {}
+		if main ~= nil then
+			loadout.MainHand = main
+		end
+		if off ~= nil then
+			loadout.OffHand = off
+		end
+		return { Coins = 4, Loadout = loadout }
+	end
+
+	local function loadoutEvent(temporary: any, main: any, off: any)
+		return {
+			Kind = "Loadout",
+			Temporary = temporary,
+			MainHand = main,
+			OffHand = off,
+		}
+	end
+
+	test("persistent state then a temporary event ignores a later persistent state", function()
+		local map = TrainingLoadouts.applyPersistentAttackMap(
+			TrainingLoadouts.emptyAttackMap(),
+			savedState("training_sword", "wooden_shield")
+		)
+		eq(map.Temporary, false)
+		eq(map.Loadout.MainHand, "training_sword")
+		eq(map.Loadout.OffHand, "wooden_shield")
+		local latched = TrainingLoadouts.applyLoadoutEvent(map, loadoutEvent(true, "ember_staff", false))
+		eq(latched.Temporary, true)
+		eq(latched.Loadout.MainHand, "ember_staff")
+		eq(latched.Loadout.OffHand, nil)
+		local later = TrainingLoadouts.applyPersistentAttackMap(latched, {
+			Coins = 9,
+			Loadout = { MainHand = "training_sword", OffHand = "wooden_shield" },
+		})
+		eq(later, latched)
+		eq(later.Temporary, true)
+		eq(later.Loadout.MainHand, "ember_staff")
+	end)
+
+	test("GetState that begins and returns after a temporary event is ignored", function()
+		local map = TrainingLoadouts.applyPersistentAttackMap(
+			TrainingLoadouts.emptyAttackMap(),
+			savedState("training_sword", "wooden_shield")
+		)
+		-- GetState is in flight and has not resumed. The temporary event
+		-- lands before the saved snapshot is applied.
+		local latched = TrainingLoadouts.applyLoadoutEvent(map, loadoutEvent(true, "hunting_bow", false))
+		eq(latched.Temporary, true)
+		eq(latched.Loadout.MainHand, "hunting_bow")
+		local returned = TrainingLoadouts.applyPersistentAttackMap(latched, savedState("training_sword", "wooden_shield"))
+		eq(returned, latched)
+		eq(returned.Loadout.MainHand, "hunting_bow")
+		eq(returned.Temporary, true)
+	end)
+
+	test("a normal restore event accepts a later persistent state", function()
+		local latched = TrainingLoadouts.applyLoadoutEvent(
+			TrainingLoadouts.emptyAttackMap(),
+			loadoutEvent(true, "ember_staff", false)
+		)
+		local restored = TrainingLoadouts.applyLoadoutEvent(latched, loadoutEvent(false, "training_sword", "wooden_shield"))
+		eq(restored.Temporary, false)
+		eq(restored.Loadout.MainHand, "training_sword")
+		eq(restored.Loadout.OffHand, "wooden_shield")
+		local later = TrainingLoadouts.applyPersistentAttackMap(restored, savedState("iron_greatsword", nil))
+		eq(later.Temporary, false)
+		eq(later.Loadout.MainHand, "iron_greatsword")
+		eq(later.Loadout.OffHand, nil)
+		eq(restored.Loadout.MainHand, "training_sword", "the restore map is not mutated")
+	end)
+
+	test("a respawn normal loadout event clears the temporary latch", function()
+		local latched = TrainingLoadouts.applyLoadoutEvent(
+			TrainingLoadouts.emptyAttackMap(),
+			loadoutEvent(true, "hunting_bow", false)
+		)
+		eq(latched.Temporary, true)
+		local respawned = TrainingLoadouts.applyLoadoutEvent(latched, loadoutEvent(false, "training_sword", false))
+		eq(respawned.Temporary, false)
+		eq(respawned.Loadout.MainHand, "training_sword")
+		eq(respawned.Loadout.OffHand, nil)
+		local follow = TrainingLoadouts.applyPersistentAttackMap(respawned, savedState("training_sword", nil))
+		eq(follow.Temporary, false)
+		eq(follow.Loadout.MainHand, "training_sword")
+	end)
+
+	test("a malformed temporary flag or loadout event leaves the map and latch unchanged", function()
+		local saved = TrainingLoadouts.applyPersistentAttackMap(
+			TrainingLoadouts.emptyAttackMap(),
+			savedState("training_sword", "wooden_shield")
+		)
+		local rejected = {
+			{ Kind = "Loadout", MainHand = "ember_staff", OffHand = false },
+			{ Kind = "Loadout", Temporary = "true", MainHand = "ember_staff", OffHand = false },
+			{ Kind = "Loadout", Temporary = 1, MainHand = "ember_staff", OffHand = false },
+			{ Kind = "Loadout", Temporary = true, MainHand = "not_a_weapon", OffHand = false },
+			{ Kind = "Loadout", Temporary = true, MainHand = 12, OffHand = false },
+			{ Kind = "Loadout", Temporary = true, MainHand = "ember_staff" },
+			{ Kind = "Loadout", Temporary = false, OffHand = false },
+			{ Kind = "Hit", Temporary = false, Damage = 4 },
+		}
+		for _, event in rejected do
+			local nextMap = TrainingLoadouts.applyLoadoutEvent(saved, event)
+			eq(nextMap, saved)
+			eq(nextMap.Temporary, false)
+			eq(nextMap.Loadout.MainHand, "training_sword")
+			eq(nextMap.Loadout.OffHand, "wooden_shield")
+		end
+		eq(TrainingLoadouts.applyLoadoutEvent(saved, "nope"), saved)
+		eq(TrainingLoadouts.applyPersistentAttackMap(saved, { Coins = 3 }), saved)
+		eq(TrainingLoadouts.applyPersistentAttackMap(saved, nil), saved)
+
+		local latched = TrainingLoadouts.applyLoadoutEvent(saved, loadoutEvent(true, "ember_staff", false))
+		local rejectedWhileLatched = {
+			{ Kind = "Loadout", Temporary = false, MainHand = "not_a_weapon", OffHand = false },
+			{ Kind = "Loadout", MainHand = "training_sword", OffHand = "wooden_shield" },
+			{ Kind = "Loadout", Temporary = nil, MainHand = "training_sword", OffHand = "wooden_shield" },
+			loadoutEvent(true, "training_sword", "not_a_weapon"),
+		}
+		for _, event in rejectedWhileLatched do
+			local nextMap = TrainingLoadouts.applyLoadoutEvent(latched, event)
+			eq(nextMap, latched)
+			eq(nextMap.Temporary, true)
+			eq(nextMap.Loadout.MainHand, "ember_staff")
+		end
 	end)
 end
