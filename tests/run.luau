@@ -130,6 +130,11 @@ require("./damage_float_spec")(test, eq)
 -- in-memory hand replacement. No PlayerData writes and no Roblox instances.
 require("./training_loadouts_spec")(test, eq)
 
+-- Training preset selector state (Issue #23). Visibility, server-truth
+-- highlight, late subscribers, and isolated listener failures. No
+-- Instances and no remotes.
+require("./training_preset_ui_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")

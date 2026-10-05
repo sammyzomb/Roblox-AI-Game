@@ -18,7 +18,11 @@
 --   CombatController.useItem(itemId)
 --   CombatController.selectTrainingPreset(presetId)
 --       Sends the existing CombatRequest action "TrainingPreset".
---       There is no selector UI and no extra touch button in this module.
+--       It does not change which preset is highlighted.
+--   CombatController.getTrainingPresetPresentation() -> { Visible, SelectedPresetId }
+--   CombatController.subscribeTrainingPreset(listener) -> disconnect
+--       This module is the only CombatEvent reader for that presentation.
+--       subscribe calls listener immediately with the cached snapshot.
 --   CombatController.raycast(origin, direction) -> Vector3
 --
 -- A validated CombatEvent { Kind = "Loadout", Temporary, MainHand, OffHand }
@@ -45,6 +49,7 @@ local CombatController = {}
 local defs = Definitions.get()
 local request: RemoteEvent
 local attackMap = TrainingLoadouts.emptyAttackMap()
+local presetPresentation = TrainingLoadouts.createPresetPresentationStore()
 local player = Players.LocalPlayer
 
 local AIM_DISTANCE = 300
@@ -131,7 +136,16 @@ function CombatController.useItem(itemId: string)
 end
 
 function CombatController.selectTrainingPreset(presetId: string)
+	presetPresentation.notePresetRequest(presetId)
 	request:FireServer({ Action = TrainingLoadouts.SELECTION_ACTION, PresetId = presetId })
+end
+
+function CombatController.getTrainingPresetPresentation(): TrainingLoadouts.PresetPresentation
+	return presetPresentation.get()
+end
+
+function CombatController.subscribeTrainingPreset(listener: TrainingLoadouts.PresetPresentationListener): () -> ()
+	return presetPresentation.subscribe(listener)
 end
 
 function CombatController:Init()
@@ -174,6 +188,7 @@ function CombatController:Start()
 		-- Presentation hook: animations, VFX and SFX attach here (see docs/COMBAT_API.md).
 		-- Hit labels read the server payload only. They do not recompute damage.
 		attackMap = TrainingLoadouts.applyLoadoutEvent(attackMap, event)
+		presetPresentation.applyEvent(event)
 		if type(event) == "table" and event.Kind == "Rejected" then
 			print(`[Combat] {event.Reason}`)
 		end
