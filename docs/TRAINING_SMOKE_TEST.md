@@ -32,10 +32,14 @@ record exists, every step below is **未執行**.
 3. Fire at the training dummy with the existing Attack control. Expected:
    the existing server-result damage presentation shows the hit. Do not
    treat a missing label as a new damage system.
-4. Keep firing until the development magazine is empty, then wait through
-   the development reload and fire again. Expected: shots stop while
-   reloading and resume after that reload, using the existing ammo path.
-   The magazine size and reload time are development values, not approved
+4. From a fresh character or session, or after deliberately draining this
+   character's magazine once, land six successful hits. Ammo stays on the
+   combatant, so switching presets or leaving and re-entering on the same
+   character does not refill it. The next fire must show the existing
+   client Output `[Combat] Reloading`. Wait about 1.6 seconds total
+   (0.2 windup + 1.4 reload), then fire again and verify damage resumes.
+   `[Combat] Busy` from pressing too fast does not prove reload. The
+   magazine size and reload time are development values, not approved
    balance.
 5. Switch to another preset, then walk onto `TrainingExitPad`. Expected:
    the live hands match the saved loadout from step 1, and that saved
@@ -266,7 +270,13 @@ record exists, every step below is **未執行**.
     Attack.
 11. Rifle: the Archer preset selects only `development_training_rifle`.
     That is the development training weapon, not the approved Magadou
-    rifle, and an ordinary Equip of it stays locked.
+    rifle. The ordinary Equip gate check runs outside training. Send the
+    existing request
+    `{ Action = "Equip", Slot = "MainHand", ItemId = "development_training_rifle" }`.
+    Expected Output:
+    `[Combat] Requires milestone development_training_rifle`.
+    The saved loadout remains unchanged. Inside training,
+    `TrainingNoPersistentEquip` would test a different gate.
 12. After step 4, while the ember staff is still the live training weapon,
     let the initial `GetState` return late or cause a `StateChanged` that
     only changes coins or XP. Attack and Skill must still use the staff.
@@ -558,8 +568,10 @@ NOT claimed as complete by this change:
 - A timed attack-practice source for blocking/shield practice.
 - Temporary training potions (non-persistent consumable stock).
 - Sword / Mage / Archer preset loadouts.
-- Magadou rifle weapon and ammo/reload behavior (no rifle `Weapons.luau`
-  entry exists yet).
+- Approved Magadou rifle and its release ammo/reload balance. A
+  development rifle entry, `development_training_rifle`, now exists in
+  `Weapons.luau` and is covered by the development-rifle section at the
+  top of this file. It is not the approved Magadou rifle.
 - UI/polish, and the full Studio playable acceptance pass across all of the
   above.
 
