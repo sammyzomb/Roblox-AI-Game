@@ -45,6 +45,9 @@
 --       A button request is not confirmation. This returns the same state.
 --   TrainingLoadouts.createPresetPresentationStore() -> store
 --       Caches that presentation so a later subscriber gets the snapshot.
+--       The immediate subscribe callback and every notify callback run in
+--       their own pcall. A listener error warns and does not change the
+--       cached presentation or skip a later listener.
 
 local CombatCore = require("./CombatCore")
 local Definitions = require("./Definitions")
@@ -470,6 +473,25 @@ function TrainingLoadouts.presentationAfterPresetRequest(state: PresetPresentati
 	return state
 end
 
+local function deliverPresetPresentation(listener: PresetPresentationListener, presentation: PresetPresentation)
+	-- The wrapper returns one value so strict pcall has an error slot.
+	-- Listener returns nothing, and a direct pcall would not type-check.
+	local ok, err = pcall(function(): any
+		listener(presentation)
+		return nil
+	end)
+	if ok then
+		return
+	end
+	-- Roblox provides warn. The pure Luau runner does not, and a missing or
+	-- failing warn must not escape into CombatController's CombatEvent handler.
+	local message = `[TrainingPreset] preset UI listener failed: {tostring(err)}`
+	local report = warn
+	if type(report) == "function" then
+		pcall(report, message)
+	end
+end
+
 function TrainingLoadouts.createPresetPresentationStore(): PresetPresentationStore
 	local state = TrainingLoadouts.emptyPresetPresentation()
 	local listeners: { PresetPresentationListener } = {}
@@ -477,7 +499,7 @@ function TrainingLoadouts.createPresetPresentationStore(): PresetPresentationSto
 	local function notify()
 		local pending = table.clone(listeners)
 		for _, listener in pending do
-			listener(snapshotPresentation(state))
+			deliverPresetPresentation(listener, snapshotPresentation(state))
 		end
 	end
 
@@ -487,7 +509,7 @@ function TrainingLoadouts.createPresetPresentationStore(): PresetPresentationSto
 		end,
 		subscribe = function(listener: PresetPresentationListener): () -> ()
 			table.insert(listeners, listener)
-			listener(snapshotPresentation(state))
+			deliverPresetPresentation(listener, snapshotPresentation(state))
 			return function()
 				local index = table.find(listeners, listener)
 				if index ~= nil then

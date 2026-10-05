@@ -62,7 +62,6 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			{ Kind = "Loadout", Temporary = true, MainHand = "not_a_weapon", OffHand = false },
 			{ Kind = "Loadout", Temporary = true, MainHand = "ember_staff" },
 			"Loadout",
-			nil,
 		}
 		for _, event in events do
 			local nextState = TrainingLoadouts.applyPresetPresentation(shown, event)
@@ -70,6 +69,10 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			eq(nextState.Visible, true)
 			eq(nextState.SelectedPresetId, "Mage")
 		end
+		local nilEvent = TrainingLoadouts.applyPresetPresentation(shown, nil)
+		eq(nilEvent, shown, "nil event keeps the same presentation")
+		eq(nilEvent.Visible, true)
+		eq(nilEvent.SelectedPresetId, "Mage")
 	end)
 
 	test("a preset request does not change highlight until the server loadout", function()
@@ -137,6 +140,71 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			eq(presentation.SelectedPresetId, nil)
 		end)
 		after()
+	end)
+
+	test("an earlier listener error still delivers the same update", function()
+		local store = TrainingLoadouts.createPresetPresentationStore()
+		local phase = "subscribe"
+		local earlyCalls = 0
+		store.subscribe(function(_presentation)
+			earlyCalls += 1
+			if phase == "update" then
+				error("preset listener boom")
+			end
+		end)
+		local lateCalls = 0
+		local lateSelection: string? = nil
+		store.subscribe(function(presentation)
+			lateCalls += 1
+			lateSelection = presentation.SelectedPresetId
+		end)
+		eq(earlyCalls, 1, "healthy subscribe")
+		eq(lateCalls, 1, "later subscribe sees the hidden snapshot")
+		eq(lateSelection, nil)
+		phase = "update"
+		local ok = pcall(function()
+			store.applyEvent(presetEvent("Mage", true))
+		end)
+		eq(ok, true, "applyEvent does not throw")
+		eq(earlyCalls, 2, "earlier listener still ran")
+		eq(lateCalls, 2, "later listener receives this update")
+		eq(lateSelection, "Mage")
+		eq(store.get().Visible, true, "cached presentation stays the server update")
+		eq(store.get().SelectedPresetId, "Mage")
+	end)
+
+	test("a failing immediate subscribe callback does not poison later use", function()
+		local store = TrainingLoadouts.createPresetPresentationStore()
+		local failingCalls = 0
+		local disconnect = store.subscribe(function(_presentation)
+			failingCalls += 1
+			error("preset subscribe boom")
+		end)
+		eq(failingCalls, 1, "immediate callback ran")
+		eq(type(disconnect), "function", "subscribe still returns disconnect")
+		eq(store.get().Visible, false, "failed callback leaves the cache hidden")
+		eq(store.get().SelectedPresetId, nil)
+
+		local healthyCalls = 0
+		local healthySelection: string? = "stale"
+		store.subscribe(function(presentation)
+			healthyCalls += 1
+			healthySelection = presentation.SelectedPresetId
+		end)
+		eq(healthyCalls, 1, "later subscribe still gets the current snapshot")
+		eq(healthySelection, nil)
+		store.applyEvent(presetEvent("Archer", true))
+		eq(failingCalls, 2, "the failing listener does not stick the store")
+		eq(healthyCalls, 2, "later listener receives the next update")
+		eq(healthySelection, "Archer")
+		eq(store.get().Visible, true)
+		eq(store.get().SelectedPresetId, "Archer")
+		disconnect()
+		store.applyEvent(presetEvent("Archer", false))
+		eq(failingCalls, 2, "disconnect removes the failing listener")
+		eq(healthyCalls, 3, "the healthy listener still receives the restore")
+		eq(store.get().Visible, false)
+		eq(store.get().SelectedPresetId, nil)
 	end)
 
 	test("the selector reducer does not clear a latched training attack map", function()

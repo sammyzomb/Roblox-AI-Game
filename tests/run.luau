@@ -131,7 +131,8 @@ require("./damage_float_spec")(test, eq)
 require("./training_loadouts_spec")(test, eq)
 
 -- Training preset selector state (Issue #23). Visibility, server-truth
--- highlight, and late subscribers. No Instances and no remotes.
+-- highlight, late subscribers, and isolated listener failures. No
+-- Instances and no remotes.
 require("./training_preset_ui_spec")(test, eq)
 
 print(`{passed} passed, {failed} failed`)

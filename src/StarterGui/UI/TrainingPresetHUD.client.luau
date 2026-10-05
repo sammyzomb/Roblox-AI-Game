@@ -7,10 +7,13 @@
 -- Activated covers mouse and touch. The click only calls
 -- selectTrainingPreset; the highlight waits for the server Loadout.
 --
--- Placement: left side, just below the top coin/level HUD (that panel ends
--- near y=96). Width stays on the left so it does not cover the centered
--- bottom stamina/mana bars or the bottom-right ContextActionService combat
--- buttons. Each option is 48 px tall. This is not final art.
+-- Placement is expected on the left, just below the top coin/level HUD
+-- (that panel ends near y=96), clear of the centered bottom stamina/mana
+-- bars and the bottom-right ContextActionService combat buttons. Each
+-- option is 48 px tall. The panel is Active so its padding and the gaps
+-- between buttons are expected to sink GUI input. That property does not
+-- prove ContextActionService will suppress MouseButton1. Studio has not
+-- been run. This is not final art.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,6 +43,7 @@ panel.Size = UDim2.fromOffset(PANEL_WIDTH, PANEL_PADDING * 2 + BUTTON_HEIGHT * #
 panel.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
 panel.BackgroundTransparency = 0.12
 panel.BorderSizePixel = 0
+panel.Active = true
 panel.Parent = gui
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 

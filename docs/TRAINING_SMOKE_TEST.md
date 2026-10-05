@@ -17,14 +17,19 @@ a later validated Loadout event's hands match that preset.
 `CombatController` is the only `CombatEvent` listener for this state; a
 UI script that starts later reads the cached snapshot.
 
-The panel sits on the left, just below the top coin/level HUD, so it does
-not cover that HUD, the centered bottom stamina/mana bars, or the
-bottom-right ContextActionService combat buttons. This is not final art.
+The panel is placed on the left, just below the top coin/level HUD.
+Clearance from that HUD, the centered bottom stamina/mana bars, and the
+bottom-right ContextActionService combat buttons is expected; Studio not
+yet run. The panel `Frame.Active` is true so its padding and the gaps
+between buttons are expected to sink GUI input; Studio not yet run.
+`Active = true` does not prove ContextActionService will suppress
+`MouseButton1`. This is not final art.
 
-Pure tests cover visibility, all three presets, malformed events, a
-request that leaves the highlight unchanged, and a subscriber that arrives
-after the event. They do not create Instances and do not prove touch
-layout in Studio.
+Pure tests cover visibility, all three presets, a nil event passed
+explicitly, malformed events, a request that leaves the highlight
+unchanged, a subscriber that arrives after the event, and a listener
+error that does not skip the next listener. They do not create Instances
+and do not prove touch layout or mouse sinking in Studio.
 
 ### Studio steps (NOT YET RUN)
 
@@ -46,11 +51,21 @@ record exists, every step below is **未執行**.
    and wooden shield, and Swordsman is highlighted only after that Loadout.
 6. Walk onto `TrainingExitPad`. The selector hides. Live hands match the
    saved loadout. A later coin or XP update does not show the selector.
-7. Phone or touch emulator: each option is at least about 48 px, usable
-   without a keyboard, and does not cover the top HUD, the bottom
-   stamina/mana bars, or the combat touch buttons.
-8. Enter again, then reset the character or die. After respawn the
-   selector is hidden and the new character wears the saved loadout.
+7. Desktop mouse, button bodies: click Swordsman, Mage, and Archer on the
+   button itself. Expected; Studio not yet run: each click sends only that
+   preset request. It does not also send Attack, swing, or spend stamina.
+   `Frame.Active` is not evidence that this already happened.
+8. Desktop mouse, gaps and padding: click the space between the buttons
+   and the panel padding around them. Expected; Studio not yet run: those
+   clicks do not send Attack and do not change the highlighted preset.
+9. Phone or touch emulator: each option is at least about 48 px and usable
+   without a keyboard. Expected; Studio not yet run: the selector stays
+   inside the mobile safe area, and it does not cover the top HUD, the
+   bottom stamina/mana bars, the Attack, Skill, Off, Block, and Potion
+   touch buttons, the movement joystick start region, or the open chat
+   window. Tapping a preset does not also fire Attack.
+10. Enter again, then reset the character or die. After respawn the
+    selector is hidden and the new character wears the saved loadout.
 
 Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this
 selector. Do not treat these steps as a playable pass.
@@ -114,10 +129,12 @@ record exists, every step below is **未執行**.
    session is not wearing the training preset, and Output has no error from
    recreating that player.
 10. Phone / touch layout: outside training the selector is hidden. During
-    training the three options are touch buttons at least 48 px tall, and
-    they do not cover the top HUD, the bottom stamina/mana bars, or the
-    Attack, Skill, Off, Block, and Potion touch buttons. Those five actions
-    are unchanged.
+    training the three options are touch buttons at least 48 px tall.
+    Expected; Studio not yet run: they do not cover the top HUD, the
+    bottom stamina/mana bars, the Attack, Skill, Off, Block, and Potion
+    touch buttons, the mobile safe area, the movement joystick, or the
+    chat window. Those five actions are unchanged, and a tap on a button
+    body, a gap, or the panel padding does not also send Attack.
 11. Rifle: confirm no rifle weapon was added and no preset selects one.
 12. After step 4, while the ember staff is still the live training weapon,
     let the initial `GetState` return late or cause a `StateChanged` that
