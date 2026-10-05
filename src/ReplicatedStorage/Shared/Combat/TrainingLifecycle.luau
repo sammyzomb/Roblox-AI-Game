@@ -71,34 +71,47 @@ export type CombatAdapter = {
 	RestoreSavedLoadout: (player: PlayerId) -> (boolean, string?),
 }
 
-export type Lifecycle = {
-	_session: TrainingSession.Session,
-	_combat: CombatAdapter,
-	_generation: { [PlayerId]: CharacterId }, -- player -> character that currently owns any session
-	_departed: { [PlayerId]: boolean }, -- weak-keyed: see Lifecycle.new
-}
-
 local TrainingLifecycle = {}
 TrainingLifecycle.__index = TrainingLifecycle
+
+-- Luau rejects casting a weak table back to a plain map. One helper keeps
+-- the runtime table and the `Lifecycle` field type identical: object-identity
+-- keys, `__mode = "k"`.
+local function weakDeparted(): typeof(setmetatable({} :: { [PlayerId]: boolean }, { __mode = "k" }))
+	return setmetatable({} :: { [PlayerId]: boolean }, { __mode = "k" })
+end
+
+-- Methods are reached through `TrainingLifecycle.__index`. A storage-only
+-- table type hides them from Luau LSP. `typeof(setmetatable(...))` includes
+-- those metatable functions, so IsTraining/Enter/Exit/OnCharacterRemoved/
+-- OnPlayerRemoving stay visible. The casts only describe storage for this
+-- type prototype. `_session` is `typeof(TrainingSession.new())` because the
+-- dual Roblox/plain-Luau require will not expose `TrainingSession.Session`.
+export type Lifecycle = typeof(setmetatable({
+	_session = TrainingSession.new(),
+	_combat = {} :: CombatAdapter,
+	_generation = {} :: { [PlayerId]: CharacterId }, -- player -> character that currently owns any session
+	_departed = weakDeparted(),
+}, TrainingLifecycle))
 
 local TRAINING_RULESET = "Training"
 
 function TrainingLifecycle.new(combat: CombatAdapter): Lifecycle
+	-- Weak-keyed tombstone set: once a Player object becomes otherwise
+	-- unreferenced (normal Roblox teardown after disconnect), this entry
+	-- can be collected instead of retaining every departed Player for
+	-- the lifetime of the server. A departed id is only ever consulted
+	-- while callbacks for that same player instance could still be in
+	-- flight (shortly after PlayerRemoving); once nothing else holds the
+	-- instance, there is nothing left that could call back in, so
+	-- collection is safe. `__mode = "k"` works for both Roblox Instances
+	-- and plain tables used as fake ids in tests.
 	return setmetatable({
 		_session = TrainingSession.new(),
 		_combat = combat,
-		_generation = {},
-		-- Weak-keyed tombstone set: once a Player object becomes otherwise
-		-- unreferenced (normal Roblox teardown after disconnect), this entry
-		-- can be collected instead of retaining every departed Player for
-		-- the lifetime of the server. A departed id is only ever consulted
-		-- while callbacks for that same player instance could still be in
-		-- flight (shortly after PlayerRemoving); once nothing else holds the
-		-- instance, there is nothing left that could call back in, so
-		-- collection is safe. `__mode = "k"` works for both Roblox Instances
-		-- and plain tables used as fake ids in tests.
-		_departed = setmetatable({}, { __mode = "k" }) :: any,
-	}, TrainingLifecycle) :: any
+		_generation = {} :: { [PlayerId]: CharacterId },
+		_departed = weakDeparted(),
+	}, TrainingLifecycle)
 end
 
 function TrainingLifecycle.IsTraining(self: Lifecycle, player: PlayerId): boolean
