@@ -130,11 +130,12 @@ record exists, every step below is **未執行**.
    recreating that player.
 10. Phone / touch layout: outside training the selector is hidden. During
     training the three options are touch buttons at least 48 px tall.
-    Expected; Studio not yet run: they do not cover the top HUD, the
-    bottom stamina/mana bars, the Attack, Skill, Off, Block, and Potion
-    touch buttons, the mobile safe area, the movement joystick, or the
-    chat window. Those five actions are unchanged, and a tap on a button
-    body, a gap, or the panel padding does not also send Attack.
+    Expected; Studio not yet run: they stay inside the mobile safe area,
+    and they do not cover the top HUD, the bottom stamina/mana bars, the
+    Attack, Skill, Off, Block, and Potion touch buttons, the movement
+    joystick, or the chat window. Those five actions are unchanged, and a
+    tap on a button body, a gap, or the panel padding does not also send
+    Attack.
 11. Rifle: confirm no rifle weapon was added and no preset selects one.
 12. After step 4, while the ember staff is still the live training weapon,
     let the initial `GetState` return late or cause a `StateChanged` that

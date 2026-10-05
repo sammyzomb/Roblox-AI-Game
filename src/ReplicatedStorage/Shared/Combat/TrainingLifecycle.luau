@@ -72,7 +72,10 @@ export type CombatAdapter = {
 }
 
 export type Lifecycle = {
-	_session: TrainingSession.Session,
+	-- The dual require binds TrainingSession from two paths, so Luau will not
+	-- read the exported name `TrainingSession.Session` off that union.
+	-- `new` is annotated to return that same Session type.
+	_session: typeof(TrainingSession.new()),
 	_combat: CombatAdapter,
 	_generation: { [PlayerId]: CharacterId }, -- player -> character that currently owns any session
 	_departed: { [PlayerId]: boolean }, -- weak-keyed: see Lifecycle.new

@@ -28,12 +28,13 @@ export type Record = {
 	PriorRuleset: string,
 }
 
-export type Session = {
-	_records: { [Id]: Record },
-}
+-- Methods are reached through `TrainingSession.__index`. `typeof(setmetatable(...))`
+-- includes those metatable functions, so `self:Exit` typechecks.
+-- `{}` alone would be a sealed empty table; the cast only types `_records`.
+export type Session = typeof(setmetatable({ _records = {} :: { [Id]: Record } }, TrainingSession))
 
 function TrainingSession.new(): Session
-	return setmetatable({ _records = {} }, TrainingSession) :: any
+	return setmetatable({ _records = {} :: { [Id]: Record } }, TrainingSession)
 end
 
 function TrainingSession.IsTraining(self: Session, id: Id): boolean
