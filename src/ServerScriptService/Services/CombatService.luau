@@ -107,7 +107,6 @@ export type NpcSpec = {
 }
 
 local NPC_TAG = "CombatNPC" -- tag a Model with a Humanoid to auto-register it
-local HIT_RADIUS = 2 -- studs: approximate half-width of a character
 local MAX_AIM_DISTANCE = 1000
 local MAX_ID_LENGTH = 64
 local ATTRIBUTE_SYNC_INTERVAL = 0.1
@@ -122,6 +121,7 @@ local CombatService = {
 
 local defs = Definitions.get()
 local settings = Config.Combat :: any
+local HIT_RADIUS = settings.CharacterHitRadius -- studs: approximate half-width of a character
 local engine = CombatCore.new(defs, settings)
 local trainingSupplies = TrainingSupplies.new(Config.Combat.DevelopmentTrainingStock)
 local limiter = RateLimiter.new(Config.Combat.RateLimit.MaxRequests, Config.Combat.RateLimit.WindowSeconds)

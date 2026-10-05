@@ -1,5 +1,78 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Scene dummy block practice
+
+Studio only. The dummy standing on `TrainingDummyMarker` is the only
+practice attacker. The three older test dummies stay passive and do not
+swing. Live servers still do not spawn dummies or start this loop.
+
+The cadence is `TrainingAttacker.DEVELOPMENT_INTERVAL_SECONDS` (2.5 seconds)
+and the horizontal practice range is
+`TrainingAttacker.DEVELOPMENT_PRACTICE_RANGE` (10 studs). Both are
+development values, not approved balance and not the training sword's own
+range. A swing is allowed only when exactly one registered, alive player
+with a finite root is inside
+`TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE` (12 horizontal studs).
+That 12 is a safety buffer over the current `training_sword` Primary melee
+bound: weapon `Range`, plus `Config.Combat.MeleeRangeTolerance`, plus
+`Config.Combat.CharacterHitRadius`. CombatService reads that shared hit
+radius. It is not release balance. A second registered, alive
+player inside that clearance suppresses the swing and does not spend the
+cadence. Each allowed swing turns that one dummy to face the chosen player,
+then calls the existing `CombatService:RequestAttack` with `MainHand` /
+`Primary`. It does not chase, grant rewards, or write `PlayerData`. The
+combat core is unchanged and can still hit every eligible player in the
+arc; this practice source avoids that by not swinging while anyone else is
+inside the clearance.
+
+If the scene dummy is deleted in Explorer instead of dying through the
+existing Killed path, the practice loop clears that binding and does not
+spawn a replacement.
+
+Older sections below that still list a timed attack-practice source as
+missing describe those earlier increments.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Test with no second player inside the 12-stud bystander clearance.
+   Enter training from the entrance pad and choose Swordsman. Walk up to
+   the designated scene dummy on `TrainingDummyMarker`, inside about 10
+   studs. Leave the three passive test dummies alone. A second client
+   inside that clearance is a failed setup: new swings must stay suppressed.
+2. There is no natural HP regeneration. Standing in range without blocking
+   loses health on each swing. Before health gets low, drink the existing
+   temporary training health potion or use the existing reset flow. Death
+   ends training, so a death here is not evidence that the attacker broke.
+   Stay in range without holding Block. Expected: about every 2.5 seconds
+   the existing server damage label and vital loss repeat on your
+   character. The scene dummy faces you for each swing. The three passive
+   dummies do not start those attacks.
+3. Face the dummy while blocking. Hold Block for at least 0.1 seconds
+   before impact. The dummy turning toward you marks the attack start, and
+   impact follows after about 0.2 seconds. Remember that hit's visible
+   damage and vital loss. Release Block and wait for a later hit.
+   Expected: the blocked hit uses the existing partial-block damage color
+   (the orange `DamageFloat` PartialBlock tone) and loses less health than
+   the later unblocked hit. This pass does not change the block formula.
+4. Walk straight out of the 10-stud practice range and stay in training.
+   Expected: once no training target remains, no new swing starts. A swing
+   that already started can still finish, but it must miss once you are
+   beyond actual melee reach (the current training-sword bound is about 11
+   studs between roots). Walk onto `TrainingExitPad`.
+   Expected: swings stay stopped even if you then walk back beside the dummy
+   while no longer training.
+5. Enter training again, return to the scene dummy, and confirm the swings
+   resume from that one dummy. Kill or reset that scene dummy and wait for
+   the existing respawn. Expected: only the replacement continues the
+   timed swings, with no second attacker. Reset your character as well.
+   Expected: the existing training exit path stops the swings, and coming
+   back produces one source only.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Development training rifle
 
 Archer's main hand is `development_training_rifle` (`Development Training Rifle`).

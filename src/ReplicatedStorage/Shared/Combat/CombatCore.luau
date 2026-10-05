@@ -38,6 +38,7 @@ export type PoolSettings = { Max: number, Regen: number, RegenDelay: number }
 export type Settings = DamageCalculator.Settings & {
 	Pools: { [string]: PoolSettings },
 	MeleeRangeTolerance: number, -- extra studs allowed for latency
+	CharacterHitRadius: number, -- studs subtracted from root-to-root distance
 	MeleeArcTolerance: number, -- extra degrees allowed for latency
 	BlockStartDelay: number, -- seconds before a raised guard counts (anti-spam)
 }

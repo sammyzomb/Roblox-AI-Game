@@ -139,6 +139,11 @@ require("./training_preset_ui_spec")(test, eq)
 -- No PlayerData and no Roblox instances.
 require("./training_supplies_spec")(test, eq)
 
+-- Scene-dummy practice swings (Issue #23). Cadence, target choice, and the
+-- bystander clearance against the real training-sword melee bound.
+-- No Roblox instances.
+require("./training_attacker_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")
