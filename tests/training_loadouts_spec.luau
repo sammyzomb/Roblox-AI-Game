@@ -47,8 +47,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(TrainingLoadouts.PRESET_IDS[3], "Archer")
 		eq(#TrainingLoadouts.PRESET_IDS, 3)
 		eq(TrainingLoadouts.SELECTION_ACTION, "TrainingPreset")
-		eq(type(TrainingLoadouts.MISSING_RIFLE), "string")
-		eq(TrainingLoadouts.MISSING_RIFLE == "", false)
+		eq(TrainingLoadouts.DEVELOPMENT_RIFLE, "development_training_rifle")
 		eq(TrainingLoadouts.itemIds("Rifle"), nil)
 		local rifleId, rifleWhy = TrainingLoadouts.validatePresetId("Rifle")
 		eq(rifleId, nil)
@@ -65,13 +64,14 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(#swordsman, 2)
 		eq(mage[1], "ember_staff")
 		eq(#mage, 1)
-		eq(archer[1], "hunting_bow")
+		eq(archer[1], TrainingLoadouts.DEVELOPMENT_RIFLE)
 		eq(#archer, 1)
-		for _, itemId in { swordsman[1], swordsman[2], mage[1], archer[1] } do
+		for _, itemId in { swordsman[1], swordsman[2], mage[1] } do
 			eq(type(itemId), "string")
 			eq(string.find(itemId, "rifle", 1, true), nil)
 			eq(defs.Weapons[itemId] ~= nil, true, itemId)
 		end
+		eq(defs.Weapons[archer[1]] ~= nil, true, archer[1])
 		eq(#TrainingLoadouts.compatibilityErrors(defs), 0)
 	end)
 
@@ -81,7 +81,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 				training_sword = { Slot = "MainHand", TwoHanded = true },
 				wooden_shield = { Slot = "OffHand" },
 				ember_staff = { Slot = "MainHand", TwoHanded = true },
-				hunting_bow = { Slot = "MainHand", TwoHanded = true },
+				development_training_rifle = { Slot = "MainHand", TwoHanded = true },
 			},
 		})
 		local found = false
@@ -107,6 +107,13 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		})
 		eq(unknownId, nil)
 		eq(unknownWhy, "UnknownPreset")
+
+		local rifleId, rifleWhy = TrainingLoadouts.validateSelectionRequest({
+			Action = "TrainingPreset",
+			PresetId = TrainingLoadouts.DEVELOPMENT_RIFLE,
+		})
+		eq(rifleId, nil)
+		eq(rifleWhy, "UnknownPreset")
 
 		local smuggledId, smuggledWhy = TrainingLoadouts.validateSelectionRequest({
 			Action = "TrainingPreset",
@@ -151,10 +158,87 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(mainId(combatant), "training_sword")
 		eq(offId(combatant), "wooden_shield")
 
-		local bowOk = TrainingLoadouts.applyPreset(engine, combatant, "Archer", 0)
-		eq(bowOk, true)
-		eq(mainId(combatant), "hunting_bow")
-		eq(offId(combatant), nil, "two-handed bow clears the shield")
+		local rifleOk = TrainingLoadouts.applyPreset(engine, combatant, "Archer", 0)
+		eq(rifleOk, true)
+		eq(mainId(combatant), TrainingLoadouts.DEVELOPMENT_RIFLE)
+		eq(offId(combatant), nil, "two-handed rifle clears the shield")
+	end)
+
+	test("development training rifle is projectile data behind a non-public milestone", function()
+		local id = TrainingLoadouts.DEVELOPMENT_RIFLE
+		local rifle = defs.Weapons[id]
+		assert(rifle, "definitions must accept the development rifle")
+		local errors = Definitions.validateWeapon(id, rifle, defs.StatusEffects)
+		eq(#errors, 0)
+		eq(rifle.Family, "Rifle")
+		eq(rifle.Archetype, "RangedPhysical")
+		eq(rifle.Slot, "MainHand")
+		eq(rifle.TwoHanded, true)
+		local attack = rifle.Attacks.Primary
+		eq(attack.Delivery, "Projectile")
+		eq(type(attack.Damage[1].Amount), "number")
+		eq(type(attack.Projectile.Speed), "number")
+		eq(attack.Projectile.Speed > 0, true)
+		eq(attack.Ammo.Capacity >= 1, true)
+		eq(attack.Ammo.ReloadTime >= 0, true)
+		eq(rifle.Unlock.Level, nil)
+		local milestone = rifle.Unlock.Milestones[1]
+		eq(type(milestone), "string")
+		eq(milestone ~= "", true)
+
+		local ordinary = player("ordinary-rifle", 20)
+		local locked, lockedWhy = engine:equipWeapon(ordinary, id, profile(20))
+		eq(locked, false)
+		eq(lockedWhy, `Requires milestone {milestone}`)
+		eq(mainId(ordinary), nil)
+
+		local granted = { Level = 1, Milestones = { [milestone] = true } }
+		local opened, openWhy = engine:equipWeapon(ordinary, id, granted)
+		eq(opened, true, openWhy)
+		engine:unequip(ordinary, "MainHand")
+
+		local trainee = player("archer-rifle", 1)
+		assert(engine:equipWeapon(trainee, "wooden_shield"))
+		local applied, applyWhy = TrainingLoadouts.applyPreset(engine, trainee, "Archer", 0)
+		eq(applied, true, applyWhy)
+		eq(mainId(trainee), id)
+		eq(offId(trainee), nil)
+
+		local now = 0
+		for _ = 1, attack.Ammo.Capacity do
+			local plan, shotWhy = engine:beginAttack(trainee, "MainHand", "Primary", now)
+			eq(plan ~= nil, true, shotWhy)
+			engine:finishAttack(trainee, plan)
+			now = trainee.BusyUntil
+		end
+		local emptyPlan, emptyWhy = engine:beginAttack(trainee, "MainHand", "Primary", now)
+		eq(emptyPlan, nil)
+		eq(emptyWhy, "Reloading")
+		local reloaded, reloadWhy = engine:beginAttack(
+			trainee,
+			"MainHand",
+			"Primary",
+			now + attack.Windup + attack.Ammo.ReloadTime
+		)
+		eq(reloaded ~= nil, true, reloadWhy)
+		engine:finishAttack(trainee, reloaded)
+
+		local restored, restoreWhy = TrainingLoadouts.equipSavedHands(
+			engine,
+			trainee,
+			"training_sword",
+			nil,
+			profile(1),
+			trainee.BusyUntil
+		)
+		eq(restored, true, restoreWhy)
+		eq(mainId(trainee), "training_sword")
+
+		local denied = player("saved-rifle", 20)
+		assert(engine:equipWeapon(denied, "training_sword"))
+		local kept, keptWhy = TrainingLoadouts.equipSavedHands(engine, denied, id, nil, profile(20), 0)
+		eq(kept, true, keptWhy)
+		eq(mainId(denied), nil, "an ordinary saved loadout cannot equip the development rifle")
 	end)
 
 	test("applyPreset rejects unknown, dead, and busy combatants without changing hands", function()

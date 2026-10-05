@@ -1,5 +1,48 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Development training rifle
+
+Archer's main hand is `development_training_rifle` (`Development Training Rifle`).
+It is data on the existing projectile path: `Family = Rifle`,
+`Archetype = RangedPhysical`, two-handed `MainHand`, attack id `Primary`,
+`Delivery = Projectile`, and the existing `Ammo` shape. Damage, projectile
+speed, magazine capacity, and reload time in that definition are development
+values. They are not approved release balance, and this is not the approved
+Magadou rifle.
+
+The unlock is milestone `development_training_rifle` only. Ordinary profiles
+do not receive that milestone, so the public Equip path does not equip it.
+The training preset still uses the existing gate bypass. Choosing Archer
+does not add a fourth preset and does not write `PlayerData`.
+
+Older sections below that say no rifle was added, or that Archer holds
+`hunting_bow`, describe those earlier increments.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Before entering training, read the saved `PlayerData.Loadout` and record
+   it byte for byte.
+2. Enter training from the entrance pad, then choose Archer on the existing
+   preset selector. Expected: the live main hand becomes the development
+   training rifle, the off hand is empty, and Archer highlights only after
+   that server Loadout. Saved `PlayerData.Loadout` is unchanged.
+3. Fire at the training dummy with the existing Attack control. Expected:
+   the existing server-result damage presentation shows the hit. Do not
+   treat a missing label as a new damage system.
+4. Keep firing until the development magazine is empty, then wait through
+   the development reload and fire again. Expected: shots stop while
+   reloading and resume after that reload, using the existing ammo path.
+   The magazine size and reload time are development values, not approved
+   balance.
+5. Switch to another preset, then walk onto `TrainingExitPad`. Expected:
+   the live hands match the saved loadout from step 1, and that saved
+   record was not overwritten with the development rifle.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Temporary training health potion
 
 In-memory `health_potion` stock for an active training session. The quantity
@@ -129,7 +172,8 @@ record exists, every step below is **未執行**.
 3. Click or tap Mage. The highlight stays on Swordsman until the ember
    staff Loadout arrives, then Mage is the only highlight. The request
    does not contain item ids.
-4. Click or tap Archer. The highlight waits for the hunting bow Loadout.
+4. Click or tap Archer. The highlight waits for the development training
+   rifle Loadout.
 5. Click or tap Swordsman again. The hands return to the training sword
    and wooden shield, and Swordsman is highlighted only after that Loadout.
 6. Walk onto `TrainingExitPad`. The selector hides. Live hands match the
@@ -159,7 +203,7 @@ Server-owned, in-memory loadouts for an active training session. The first
 successful enter applies Swordsman (`training_sword` + `wooden_shield`).
 While that same session stays active, another enter does not put Swordsman
 back. The on-screen selector described above asks for Mage (`ember_staff`)
-or Archer (`hunting_bow`) through the existing `CombatRequest` action
+or Archer (`development_training_rifle`) through the existing `CombatRequest` action
 `TrainingPreset`. Manual exit reads the saved `PlayerData`
 hands back onto the live combatant and does not call `PlayerDataService:Update`.
 Death, respawn, and disconnect do not persist the training hands; a new
@@ -178,8 +222,9 @@ in-memory rollback, lifecycle ordering, and those attack-map orderings.
 They do **not** create Instances and do **not** prove remotes, touch
 controls, or character respawn in Studio.
 
-The approved rifle is still not in `Data/Weapons.luau`. This pass does not
-add one.
+This preset pass originally shipped Archer as `hunting_bow` because the
+approved rifle was absent. The later development-rifle section replaces
+only that main-hand id. It is not approved release balance.
 
 ### Studio steps (NOT YET RUN)
 
@@ -198,8 +243,8 @@ record exists, every step below is **未執行**.
    `CombatRequest` `{ Action = "TrainingPreset", PresetId = "Mage" }` and
    does not send item ids. The highlight stays on the previous preset until
    the server Loadout arrives. Hands then become the ember staff only.
-5. Click or tap Archer. Hands become the hunting bow only, and Archer
-   highlights only after that server Loadout.
+5. Click or tap Archer. Hands become the development training rifle only,
+   and Archer highlights only after that server Loadout.
 6. Send `{ Action = "TrainingPreset", PresetId = "Rifle" }` and
    `{ Action = "Equip", Slot = "MainHand", ItemId = "iron_greatsword" }`.
    Both are rejected. Saved `Loadout` and `Consumables` stay unchanged.
@@ -219,7 +264,9 @@ record exists, every step below is **未執行**.
     joystick, or the chat window. Those five actions are unchanged, and a
     tap on a button body, a gap, or the panel padding does not also send
     Attack.
-11. Rifle: confirm no rifle weapon was added and no preset selects one.
+11. Rifle: the Archer preset selects only `development_training_rifle`.
+    That is the development training weapon, not the approved Magadou
+    rifle, and an ordinary Equip of it stays locked.
 12. After step 4, while the ember staff is still the live training weapon,
     let the initial `GetState` return late or cause a `StateChanged` that
     only changes coins or XP. Attack and Skill must still use the staff.
@@ -230,7 +277,7 @@ record exists, every step below is **未執行**.
     may repeat that saved loadout. Attack then uses the saved weapon.
 14. Enter again, switch to Archer, then reset the character. The new
     character wears the saved loadout, and Attack uses that saved weapon
-    rather than the hunting bow.
+    rather than the development training rifle.
 
 Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
 Steps 12–14 are also **未執行**. The pure ordering tests do not prove
