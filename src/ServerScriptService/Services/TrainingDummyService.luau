@@ -8,7 +8,9 @@
 -- (TrainingSceneConfig DummyMarker, training_sword) periodically faces one
 -- nearby training player and calls CombatService:RequestAttack. Cadence and
 -- eligibility live in TrainingAttacker. Death uses the existing respawn
--- path; the replacement becomes the only practice attacker.
+-- path; the replacement becomes the only practice attacker. If that model
+-- is removed outside Killed, the heartbeat retires it before scanning
+-- players and does not invent a replacement.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -155,6 +157,14 @@ end
 local function onPracticeHeartbeat()
 	local model = practiceModel
 	if model == nil then
+		return
+	end
+	-- Explorer delete does not go through Killed. Drop the binding before
+	-- any player scan, and do not spawn a stand-in here. Read Parent into
+	-- a boolean so this check does not narrow the later Parent compare.
+	local detached = model.Parent == nil
+	if detached then
+		clearPracticeAttacker(model)
 		return
 	end
 	-- AttackerId is an opaque identity. Compare it as unknown so the

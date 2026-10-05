@@ -37,6 +37,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 	test("development cadence and practice range are explicit constants", function()
 		eq(INTERVAL, 2.5, "interval")
 		eq(RANGE, 10, "range")
+		eq(TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE, 12, "clearance")
 	end)
 
 	test("non-training, dead, unregistered, and missing-root targets are not selected", function()
@@ -70,29 +71,107 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(highDecision.TargetId, "high")
 	end)
 
-	test("the nearest target wins, with a deterministic tie-break", function()
+	test("the sole clearance occupant is selected, ignoring non-occupants", function()
 		local state = bound("scene", 0)
-		local far = candidate("far", "a", { 9, 3, 0 })
-		local mid = candidate("mid", "m", { 0, 3, 6 })
+		local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+		local deadCloser = candidate("dead", "a", { 1, 3, 0 }, { Alive = false })
+		local unregisteredCloser = candidate("ghost", "b", { 1, 3, 0 }, { Registered = false })
+		local outside = candidate("far", "c", { clearance + 1, 3, 0 })
 		local near = candidate("near", "z", { 3, 3, 0 })
-		local decision = TrainingAttacker.step(state, probe("scene", 0, { far, mid, near }))
+		local decision, nextState = TrainingAttacker.step(state, probe("scene", 0, {
+			deadCloser,
+			outside,
+			near,
+			unregisteredCloser,
+		}))
 		eq(decision.Action, "Attack")
 		eq(decision.TargetId, "near")
 		eq(decision.Aim.X, 3)
 		eq(decision.Aim.Y, 3)
 		eq(decision.Aim.Z, 0)
+		eq(nextState.NextDue, INTERVAL)
 
-		local west = candidate("west", "b", { -4, 3, 0 })
-		local east = candidate("east", "a", { 4, 3, 0 })
-		local forward = TrainingAttacker.step(state, probe("scene", 0, { west, east }))
-		local reverse = TrainingAttacker.step(state, probe("scene", 0, { east, west }))
-		eq(forward.TargetId, "east", "smaller tie key wins an equal distance")
-		eq(reverse.TargetId, "east", "input order does not change the tie")
+		local reversed = TrainingAttacker.step(state, probe("scene", 0, {
+			unregisteredCloser,
+			near,
+			outside,
+			deadCloser,
+		}))
+		eq(reversed.TargetId, "near", "input order does not replace the only occupant")
+	end)
 
-		local first = candidate("first", "same", { 4, 3, 0 })
-		local second = candidate("second", "same", { -4, 3, 0 })
-		local stable = TrainingAttacker.step(state, probe("scene", 0, { first, second }))
-		eq(stable.TargetId, "first", "equal key keeps the earlier candidate")
+	test("a non-training bystander inside the clearance suppresses the swing", function()
+		local state = bound("scene", 0)
+		local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+		local target = candidate("player", "p", { 2, 3, 0 })
+		local bystander = candidate("watch", "w", { 4, 3, 0 }, { Training = false })
+		local decision, nextState = TrainingAttacker.step(state, probe("scene", 0, { target, bystander }))
+		eq(decision.Action, "Skip")
+		eq(decision.TargetId, nil)
+		eq(nextState, state, "a bystander suppression does not advance NextDue")
+
+		local onTheEdge = candidate("edge", "e", { clearance, 3, 0 }, { Training = false })
+		local edgeDecision, edgeState = TrainingAttacker.step(state, probe("scene", 0, { target, onTheEdge }))
+		eq(edgeDecision.Action, "Skip", "the safety buffer is inclusive")
+		eq(edgeState, state)
+
+		local overhead = candidate("high", "h", { 0, 100, 0 }, { Training = false })
+		local highDecision, highState = TrainingAttacker.step(state, probe("scene", 0, { target, overhead }))
+		eq(highDecision.Action, "Skip", "clearance is horizontal, so height does not exempt a bystander")
+		eq(highState, state)
+	end)
+
+	test("a second training player inside the clearance also suppresses the swing", function()
+		local state = bound("scene", 0)
+		local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+		local target = candidate("player", "p", { 2, 3, 0 })
+		local outsidePractice = candidate("other", "o", { clearance, 3, 0 })
+		local decision, nextState = TrainingAttacker.step(state, probe("scene", 0, { target, outsidePractice }))
+		eq(decision.Action, "Skip", "a second trainee inside the buffer suppresses even outside practice range")
+		eq(nextState, state)
+
+		local alsoPracticing = candidate("close", "c", { 6, 3, 0 })
+		local crowded, held = TrainingAttacker.step(state, probe("scene", 0, { target, alsoPracticing }))
+		eq(crowded.Action, "Skip")
+		eq(crowded.TargetId, nil)
+		eq(held, state)
+	end)
+
+	test("a bystander outside the clearance does not suppress a valid solo target", function()
+		local state = bound("scene", 0)
+		local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+		local target = candidate("player", "p", { 2, 3, 0 })
+		local outside = candidate("watch", "w", { clearance + 0.01, 3, 0 }, { Training = false })
+		local decision, nextState = TrainingAttacker.step(state, probe("scene", 0, { outside, target }))
+		eq(decision.Action, "Attack")
+		eq(decision.TargetId, "player")
+		eq(nextState.NextDue, INTERVAL)
+
+		local dead = candidate("dead", "d", { 1, 3, 0 }, { Alive = false })
+		local unregistered = candidate("ghost", "g", { 1, 3, 0 }, { Registered = false })
+		local missing = candidate("nobody", "n", nil)
+		local nonFinite = candidate("nan", "nan", { 1, 3, 0 }, { Training = false })
+		nonFinite.Root = { X = 0, Y = 0, Z = 0 / 0 }
+		local still = TrainingAttacker.step(state, probe("scene", 0, { target, dead, unregistered, missing, nonFinite }))
+		eq(still.Action, "Attack")
+		eq(still.TargetId, "player")
+	end)
+
+	test("a suppressed bystander decision does not advance NextDue", function()
+		local state = bound("scene", 5)
+		local target = candidate("player", "p", { 2, 3, 0 })
+		local bystander = candidate("watch", "w", { 3, 3, 0 }, { Training = false })
+		local decision, nextState = TrainingAttacker.step(state, probe("scene", 5, { target, bystander }))
+		eq(decision.Action, "Skip")
+		eq(nextState.NextDue, state.NextDue)
+		eq(TrainingAttacker.isDue(nextState, "scene", 5), true)
+		local later, still = TrainingAttacker.step(nextState, probe("scene", 5 + INTERVAL, { target, bystander }))
+		eq(later.Action, "Skip")
+		eq(still.NextDue, state.NextDue)
+		local alone, committed = TrainingAttacker.step(still, probe("scene", 5 + INTERVAL, { target }))
+		eq(alone.Action, "Attack")
+		eq(alone.TargetId, "player")
+		eq(committed.NextDue, 5 + INTERVAL * 2)
 	end)
 
 	test("a due attacker attempts once and does not retry before the next interval", function()

@@ -9,9 +9,21 @@
 -- 7, plus the existing melee tolerance and hit radius), so a selected
 -- player can actually be hit by the current Primary swing.
 --
+-- DEVELOPMENT_BYSTANDER_CLEARANCE is also horizontal XZ studs. 12 is a
+-- safety buffer, not release balance. The current training_sword Primary
+-- can connect when the 3D distance between roots is at most 11 studs
+-- (Range 7 + MeleeRangeTolerance 2 + hit radius 2). Horizontal distance is
+-- never larger than that 3D distance, so anyone who could be hit is inside
+-- this clearance. The only allowed swing is when exactly one registered,
+-- alive player with a finite root is inside it, and that same player is
+-- training and inside DEVELOPMENT_PRACTICE_RANGE. A second such player
+-- suppresses the swing. Suppression is not an attempt and does not advance
+-- the cadence.
+--
 -- Public API:
 --   TrainingAttacker.DEVELOPMENT_INTERVAL_SECONDS
 --   TrainingAttacker.DEVELOPMENT_PRACTICE_RANGE
+--   TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
 --   TrainingAttacker.initial(now) -> State
 --   TrainingAttacker.adopt(state, attackerId, now) -> State
 --       Binds one attacker. The same id keeps its cadence. A different id
@@ -63,6 +75,8 @@ local TrainingAttacker = {
 	DEVELOPMENT_INTERVAL_SECONDS = 2.5,
 	-- Horizontal studs. Not an approved weapon range.
 	DEVELOPMENT_PRACTICE_RANGE = 10,
+	-- Horizontal studs. Safety buffer over the 11-stud melee bound, not balance.
+	DEVELOPMENT_BYSTANDER_CLEARANCE = 12,
 }
 
 local function finite(n: number): boolean
@@ -124,6 +138,30 @@ type Ranked = {
 	Aim: Vec3,
 }
 
+local function insideClearance(origin: Vec3, candidate: Candidate, clearanceSquared: number): boolean
+	if candidate.Registered ~= true or candidate.Alive ~= true then
+		return false
+	end
+	local root = candidate.Root
+	if root == nil then
+		return false
+	end
+	local distance = horizontalDistanceSquared(origin, root)
+	return distance ~= nil and distance <= clearanceSquared
+end
+
+-- Registered, alive players with a finite root. Training is not required:
+-- a bystander in the clearance is enough to withhold the swing.
+local function clearanceOccupantCount(origin: Vec3, candidates: { Candidate }, clearanceSquared: number): number
+	local count = 0
+	for _, candidate in candidates do
+		if insideClearance(origin, candidate, clearanceSquared) then
+			count += 1
+		end
+	end
+	return count
+end
+
 local function selectTarget(origin: Vec3, candidates: { Candidate }, rangeSquared: number): Ranked?
 	local ranked: { Ranked } = {}
 	for index, candidate in candidates do
@@ -181,6 +219,12 @@ function TrainingAttacker.step(state: State, probe: Probe): (Decision, State)
 	end
 	local candidates = probe.Candidates
 	if type(candidates) ~= "table" then
+		return decide("Skip"), state
+	end
+	local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+	if clearanceOccupantCount(origin, candidates, clearance * clearance) ~= 1 then
+		-- Zero occupants is an ordinary miss. Two or more is crowding.
+		-- Neither one is an attack attempt, so NextDue stays put.
 		return decide("Skip"), state
 	end
 	local range = TrainingAttacker.DEVELOPMENT_PRACTICE_RANGE
