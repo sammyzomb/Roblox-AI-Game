@@ -32,6 +32,19 @@
 --       set, PlayerData StateChanged and a late GetState result do not
 --       replace it. A valid Temporary=false event replaces the map and
 --       clears the latch. A malformed event changes neither.
+--   TrainingLoadouts.emptyPresetPresentation() -> { Visible, SelectedPresetId }
+--   TrainingLoadouts.identifyPreset(hands) -> presetId?
+--       Matches the item ids in validated hands to one PRESET_IDS entry
+--       via itemIds. It does not read weapon slots, damage, or gates.
+--   TrainingLoadouts.applyPresetPresentation(state, event) -> state
+--       A valid Temporary=true Loadout shows the selector and selects the
+--       preset those hands identify, or none if they match no single preset.
+--       A valid Temporary=false Loadout hides it and clears the selection.
+--       Anything else returns the same state.
+--   TrainingLoadouts.presentationAfterPresetRequest(state, presetId) -> state
+--       A button request is not confirmation. This returns the same state.
+--   TrainingLoadouts.createPresetPresentationStore() -> store
+--       Caches that presentation so a later subscriber gets the snapshot.
 
 local CombatCore = require("./CombatCore")
 local Definitions = require("./Definitions")
@@ -52,6 +65,20 @@ export type ReadLoadout = {
 export type AttackMap = {
 	Loadout: PresentedHands,
 	Temporary: boolean,
+}
+
+export type PresetPresentation = {
+	Visible: boolean,
+	SelectedPresetId: string?,
+}
+
+export type PresetPresentationListener = (presentation: PresetPresentation) -> ()
+
+export type PresetPresentationStore = {
+	get: () -> PresetPresentation,
+	subscribe: (listener: PresetPresentationListener) -> () -> (),
+	applyEvent: (event: unknown) -> (),
+	notePresetRequest: (presetId: unknown) -> (),
 }
 
 local PRESET_ITEMS: { [string]: { string } } = {
@@ -373,6 +400,119 @@ function TrainingLoadouts.applyLoadoutEvent(state: AttackMap, event: unknown): A
 		return state
 	end
 	return { Loadout = read.Hands, Temporary = read.Temporary }
+end
+
+local function freezePresentation(visible: boolean, selected: string?): PresetPresentation
+	return table.freeze({
+		Visible = visible,
+		SelectedPresetId = selected,
+	})
+end
+
+local function snapshotPresentation(state: PresetPresentation): PresetPresentation
+	return {
+		Visible = state.Visible,
+		SelectedPresetId = state.SelectedPresetId,
+	}
+end
+
+function TrainingLoadouts.emptyPresetPresentation(): PresetPresentation
+	return freezePresentation(false, nil)
+end
+
+local function sortedItemKey(ids: { string }): string
+	local copy = table.clone(ids)
+	table.sort(copy)
+	return table.concat(copy, "\0")
+end
+
+-- The presented hands are already validated item ids. A preset matches when
+-- that set is exactly itemIds(presetId). Slot names are not consulted, so
+-- this does not reimplement which weapon may occupy which hand.
+function TrainingLoadouts.identifyPreset(hands: unknown): string?
+	if type(hands) ~= "table" then
+		return nil
+	end
+	local ids = {}
+	for _, itemId in hands :: { [unknown]: unknown } do
+		if type(itemId) ~= "string" then
+			return nil
+		end
+		table.insert(ids, itemId)
+	end
+	local key = sortedItemKey(ids)
+	local found: string? = nil
+	for _, presetId in TrainingLoadouts.PRESET_IDS do
+		local items = TrainingLoadouts.itemIds(presetId)
+		if items ~= nil and sortedItemKey(items) == key then
+			if found ~= nil then
+				return nil
+			end
+			found = presetId
+		end
+	end
+	return found
+end
+
+function TrainingLoadouts.applyPresetPresentation(state: PresetPresentation, event: unknown): PresetPresentation
+	local read = TrainingLoadouts.readLoadoutEvent(event)
+	if read == nil then
+		return state
+	end
+	local selected = if read.Temporary then TrainingLoadouts.identifyPreset(read.Hands) else nil
+	if state.Visible == read.Temporary and state.SelectedPresetId == selected then
+		return state
+	end
+	return freezePresentation(read.Temporary, selected)
+end
+
+function TrainingLoadouts.presentationAfterPresetRequest(state: PresetPresentation, _presetId: unknown): PresetPresentation
+	return state
+end
+
+function TrainingLoadouts.createPresetPresentationStore(): PresetPresentationStore
+	local state = TrainingLoadouts.emptyPresetPresentation()
+	local listeners: { PresetPresentationListener } = {}
+
+	local function notify()
+		local pending = table.clone(listeners)
+		for _, listener in pending do
+			listener(snapshotPresentation(state))
+		end
+	end
+
+	local store: PresetPresentationStore = {
+		get = function(): PresetPresentation
+			return snapshotPresentation(state)
+		end,
+		subscribe = function(listener: PresetPresentationListener): () -> ()
+			table.insert(listeners, listener)
+			listener(snapshotPresentation(state))
+			return function()
+				local index = table.find(listeners, listener)
+				if index ~= nil then
+					table.remove(listeners, index)
+				end
+			end
+		end,
+		applyEvent = function(event: unknown)
+			local nextState = TrainingLoadouts.applyPresetPresentation(state, event)
+			if nextState == state then
+				return
+			end
+			state = nextState
+			notify()
+		end,
+		notePresetRequest = function(presetId: unknown)
+			local nextState = TrainingLoadouts.presentationAfterPresetRequest(state, presetId)
+			if nextState == state then
+				return
+			end
+			state = nextState
+			notify()
+		end,
+	}
+	return store
 end
 
 local bootErrors = TrainingLoadouts.compatibilityErrors(Definitions.get())

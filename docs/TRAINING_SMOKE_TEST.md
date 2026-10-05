@@ -1,13 +1,68 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Training preset selector (visible, server-truth)
+
+Placeholder buttons for the three temporary presets. The selector stays
+hidden until the owning client receives a valid `CombatEvent`
+`Kind = "Loadout"` with `Temporary = true`. A valid `Temporary = false`
+event hides it again. A malformed or unrelated event does not change
+whether it is showing or which option is highlighted.
+
+The options are exactly `TrainingLoadouts.PRESET_IDS` (Swordsman, Mage,
+Archer). Each one is a `TextButton` at least 48 px tall. Mouse and touch
+use `Activated` and call `CombatController.selectTrainingPreset`. That
+sends the existing `TrainingPreset` request and does not send item ids.
+The click does not highlight the option. The highlight changes only after
+a later validated Loadout event's hands match that preset.
+`CombatController` is the only `CombatEvent` listener for this state; a
+UI script that starts later reads the cached snapshot.
+
+The panel sits on the left, just below the top coin/level HUD, so it does
+not cover that HUD, the centered bottom stamina/mana bars, or the
+bottom-right ContextActionService combat buttons. This is not final art.
+
+Pure tests cover visibility, all three presets, malformed events, a
+request that leaves the highlight unchanged, and a subscriber that arrives
+after the event. They do not create Instances and do not prove touch
+layout in Studio.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Sync this branch and start Play Solo. Before entering training, confirm
+   the preset selector is not visible. The top HUD and the Attack, Skill,
+   Off, Block, and Potion controls are unchanged.
+2. Walk onto `TrainingEntrancePad`. The selector appears with exactly
+   Swordsman, Mage, and Archer. Swordsman is highlighted only after the
+   server Loadout for the training sword and wooden shield. Saved
+   `PlayerData.Loadout` is unchanged.
+3. Click or tap Mage. The highlight stays on Swordsman until the ember
+   staff Loadout arrives, then Mage is the only highlight. The request
+   does not contain item ids.
+4. Click or tap Archer. The highlight waits for the hunting bow Loadout.
+5. Click or tap Swordsman again. The hands return to the training sword
+   and wooden shield, and Swordsman is highlighted only after that Loadout.
+6. Walk onto `TrainingExitPad`. The selector hides. Live hands match the
+   saved loadout. A later coin or XP update does not show the selector.
+7. Phone or touch emulator: each option is at least about 48 px, usable
+   without a keyboard, and does not cover the top HUD, the bottom
+   stamina/mana bars, or the combat touch buttons.
+8. Enter again, then reset the character or die. After respawn the
+   selector is hidden and the new character wears the saved loadout.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this
+selector. Do not treat these steps as a playable pass.
+
 ## Training preset pass (temporary Swordsman / Mage / Archer hands)
 
 Server-owned, in-memory loadouts for an active training session. The first
 successful enter applies Swordsman (`training_sword` + `wooden_shield`).
 While that same session stays active, another enter does not put Swordsman
-back. A future UI can ask for Mage (`ember_staff`) or Archer (`hunting_bow`)
-through the existing `CombatRequest` action `TrainingPreset`. There is no
-selector button in this pass. Manual exit reads the saved `PlayerData`
+back. The on-screen selector described above asks for Mage (`ember_staff`)
+or Archer (`hunting_bow`) through the existing `CombatRequest` action
+`TrainingPreset`. Manual exit reads the saved `PlayerData`
 hands back onto the live combatant and does not call `PlayerDataService:Update`.
 Death, respawn, and disconnect do not persist the training hands; a new
 character still uses the existing saved-loadout spawn path.
@@ -41,11 +96,12 @@ record exists, every step below is **未執行**.
 3. While still inside the same session, touch the entrance again. The
    hands stay on whatever preset is currently equipped. They do not snap
    back to Swordsman if a later step already changed them.
-4. From the client, send `CombatRequest`
-   `{ Action = "TrainingPreset", PresetId = "Mage" }` (there is still no
-   on-screen selector). Hands become the ember staff only.
-5. Send `{ Action = "TrainingPreset", PresetId = "Archer" }`. Hands become
-   the hunting bow only.
+4. Click or tap Mage on the training preset selector. That sends
+   `CombatRequest` `{ Action = "TrainingPreset", PresetId = "Mage" }` and
+   does not send item ids. The highlight stays on the previous preset until
+   the server Loadout arrives. Hands then become the ember staff only.
+5. Click or tap Archer. Hands become the hunting bow only, and Archer
+   highlights only after that server Loadout.
 6. Send `{ Action = "TrainingPreset", PresetId = "Rifle" }` and
    `{ Action = "Equip", Slot = "MainHand", ItemId = "iron_greatsword" }`.
    Both are rejected. Saved `Loadout` and `Consumables` stay unchanged.
@@ -57,8 +113,11 @@ record exists, every step below is **未執行**.
 9. Enter again and disconnect without using the exit pad. Rejoin. The new
    session is not wearing the training preset, and Output has no error from
    recreating that player.
-10. Phone / touch layout: confirm there is still no always-visible preset
-    selector. Attack, Skill, Off, Block, and Potion are unchanged.
+10. Phone / touch layout: outside training the selector is hidden. During
+    training the three options are touch buttons at least 48 px tall, and
+    they do not cover the top HUD, the bottom stamina/mana bars, or the
+    Attack, Skill, Off, Block, and Potion touch buttons. Those five actions
+    are unchanged.
 11. Rifle: confirm no rifle weapon was added and no preset selects one.
 12. After step 4, while the ember staff is still the live training weapon,
     let the initial `GetState` return late or cause a `StateChanged` that
