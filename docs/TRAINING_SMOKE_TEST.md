@@ -1,5 +1,69 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Temporary training health potion
+
+In-memory `health_potion` stock for an active training session. The quantity
+is `Config.Combat.DevelopmentTrainingStock` (currently 2). That table is a
+development configuration: the Product Owner has not approved a release
+quantity, limit, price, or final balance. It is not `StarterConsumables`
+(currently 3) and it is never written to `PlayerData.Consumables`.
+
+The first successful training preset in a session grants a fresh stock.
+Choosing another preset, or entering again while that same session is still
+active, does not refill it. A later new session can grant a fresh stock.
+`UseItem` for `health_potion` while training calls the existing
+`CombatCore.useConsumable` and decrements the temporary count only after
+that call succeeds. Cooldown (`Cooldown`) and full health (`FullHealth`)
+reject without spending a potion and without calling
+`PlayerDataService:Update`. Any other item rejects with
+`TrainingItemUnsupported`. An empty or missing training stock rejects with
+`NoTrainingStock`. Neither rejection falls through to permanent stock.
+
+A manual exit clears the temporary stock only after the saved loadout
+restore succeeds. A failed restore leaves the player in training and keeps
+the remaining stock. Death, a new character, and disconnect clear it.
+Clearing more than once is safe. Outside training, `UseItem` still spends
+`PlayerData.Consumables` exactly as before.
+
+Older sections below that say training potions are not implemented describe
+those earlier increments.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Before entering training, read `PlayerData.Consumables` (via
+   `PlayerDataService:Get` or the `GetState` remote) and record the
+   `health_potion` count byte for byte, including a missing key.
+2. Enter training from the entrance pad. Confirm the first successful
+   session has temporary stock equal to `DevelopmentTrainingStock`
+   (`health_potion` = 2), and the saved consumable count is unchanged.
+   Select another preset, leave and re-enter while still in the same
+   session, and confirm the temporary count does not refill.
+3. Take damage from the training dummy so health is below maximum. Use the
+   existing potion control (`UseItem` / `health_potion`). Expected: health
+   increases, `CombatEvent` `Kind = "ItemUsed"` fires, and the temporary
+   count drops by 1. Saved `Consumables` stay unchanged.
+4. Use the potion again immediately (cooldown) and, after healing to full,
+   use it at full health. Expected: `Rejected` with `Cooldown` or
+   `FullHealth`, and the temporary count does not change. Saved
+   `Consumables` stay unchanged.
+5. Spend the remaining temporary potions, then use one more. Expected: the
+   last successful use leaves temporary stock at 0, and the next request
+   rejects with `NoTrainingStock`. A `UseItem` for any other item id rejects
+   with `TrainingItemUnsupported`. Saved `Consumables` stay unchanged.
+6. Exit through the training exit. Expected: saved loadout returns, temporary
+   stock is gone, and `PlayerData.Consumables` is still the byte-for-byte
+   value from step 1. Enter again and confirm a new session grants 2.
+7. Enter, note the temporary count, then die and respawn. Expected: temporary
+   stock is cleared and the saved consumable count is unchanged. Repeat once
+   by disconnecting (or stopping Play) mid-session and rejoining: the new
+   character is not holding the previous temporary stock, and saved
+   `Consumables` still match step 1.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Training preset selector (visible, server-truth)
 
 Placeholder buttons for the three temporary presets. The selector stays

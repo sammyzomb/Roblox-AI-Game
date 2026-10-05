@@ -135,6 +135,10 @@ require("./training_loadouts_spec")(test, eq)
 -- Instances and no remotes.
 require("./training_preset_ui_spec")(test, eq)
 
+-- Temporary training health potions (Issue #23). In-memory stock only.
+-- No PlayerData and no Roblox instances.
+require("./training_supplies_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")
