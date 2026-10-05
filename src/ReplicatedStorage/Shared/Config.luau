@@ -37,6 +37,7 @@ local Config = {
 		LevelDamageScaling = 0.02, -- +2% damage per level above 1 (capped by ruleset)
 		MinDamage = 1,
 		MeleeRangeTolerance = 2, -- studs of latency slack for melee reach
+		CharacterHitRadius = 2, -- studs subtracted from root-to-root distance before hit checks
 		MeleeArcTolerance = 15, -- degrees of latency slack for melee arcs
 		BlockStartDelay = 0.1, -- a guard must be up this long before it blocks
 		Health = { Base = 100, PerLevel = 5 },

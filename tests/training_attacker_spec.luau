@@ -1,7 +1,13 @@
 -- Pure tests for the scene dummy's development attack cadence.
 -- The production module is src/ReplicatedStorage/Shared/Combat/TrainingAttacker.luau.
 -- These tests do not construct Roblox instances.
+-- The clearance test reads the validated training_sword Primary and the
+-- combat settings CombatService passes into CombatCore.
 
+local Config = require("../src/ReplicatedStorage/Shared/Config")
+local Definitions = require("../src/ReplicatedStorage/Shared/Combat/Definitions")
+local CombatCore = require("../src/ReplicatedStorage/Shared/Combat/CombatCore")
+local Rulesets = require("../src/ReplicatedStorage/Shared/Combat/Rulesets")
 local TrainingAttacker = require("../src/ReplicatedStorage/Shared/Combat/TrainingAttacker")
 
 return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
@@ -38,6 +44,52 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(INTERVAL, 2.5, "interval")
 		eq(RANGE, 10, "range")
 		eq(TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE, 12, "clearance")
+	end)
+
+	test("bystander clearance covers the validated training sword melee reach", function()
+		local defs = Definitions.get()
+		local weapon = defs.Weapons.training_sword
+		if weapon == nil then
+			error("validated training_sword is missing", 0)
+		end
+		local primary = weapon.Attacks.Primary
+		if primary == nil then
+			error("validated Primary is missing", 0)
+		end
+		eq(primary.Delivery, "Melee", "Primary is the validated melee attack")
+		local range = primary.Range
+		if type(range) ~= "number" then
+			error("validated Primary range is missing", 0)
+		end
+
+		local settings = Config.Combat :: CombatCore.Settings
+		local engine = CombatCore.new(defs, settings)
+		eq(engine.Settings, settings, "the core stores the real combat settings")
+		local radius = engine.Settings.CharacterHitRadius
+		local tolerance = engine.Settings.MeleeRangeTolerance
+		local meleeBound = range + tolerance + radius
+		local clearance = TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE
+		if meleeBound > clearance then
+			error(`melee bound {meleeBound} exceeds bystander clearance {clearance}`, 0)
+		end
+		if RANGE >= clearance then
+			error(`practice range {RANGE} is not inside clearance {clearance}`, 0)
+		end
+
+		local attacker = engine:newCombatant({ Id = "dummy", Kind = "NPC", Level = 1, MaxHealth = 100 })
+		local target = engine:newCombatant({ Id = "player", Kind = "Player", Level = 1, MaxHealth = 100 })
+		local ruleset = Rulesets.get("PvE")
+		local function serviceDistance(rootDistance: number): number
+			return math.max(0, rootDistance - radius)
+		end
+		eq(engine:checkReach(attacker, target, primary, ruleset, {
+			Distance = serviceDistance(meleeBound),
+			Angle = 0,
+		}), true, "the shared radius is still in range at the bound")
+		eq(engine:checkReach(attacker, target, primary, ruleset, {
+			Distance = serviceDistance(meleeBound + 0.01),
+			Angle = 0,
+		}), false, "past the bound is out of range")
 	end)
 
 	test("non-training, dead, unregistered, and missing-root targets are not selected", function()

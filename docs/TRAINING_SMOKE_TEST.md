@@ -14,8 +14,9 @@ range. A swing is allowed only when exactly one registered, alive player
 with a finite root is inside
 `TrainingAttacker.DEVELOPMENT_BYSTANDER_CLEARANCE` (12 horizontal studs).
 That 12 is a safety buffer over the current `training_sword` Primary melee
-bound of 11 studs (weapon range 7, plus `MeleeRangeTolerance` 2, plus the
-combat hit radius 2). It is not release balance. A second registered, alive
+bound: weapon `Range`, plus `Config.Combat.MeleeRangeTolerance`, plus
+`Config.Combat.CharacterHitRadius`. CombatService reads that shared hit
+radius. It is not release balance. A second registered, alive
 player inside that clearance suppresses the swing and does not spend the
 cadence. Each allowed swing turns that one dummy to face the chosen player,
 then calls the existing `CombatService:RequestAttack` with `MainHand` /

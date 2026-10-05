@@ -5,16 +5,19 @@
 -- balance and are not the training sword's own Range or Recovery.
 --
 -- DEVELOPMENT_PRACTICE_RANGE is horizontal XZ studs from the attacker root.
--- 10 is inside the existing melee reach used by CombatService (sword range
--- 7, plus the existing melee tolerance and hit radius), so a selected
--- player can actually be hit by the current Primary swing.
+-- 10 is inside the existing melee reach used by CombatService (the
+-- training_sword Primary Range, plus Config.Combat.MeleeRangeTolerance,
+-- plus Config.Combat.CharacterHitRadius), so a selected player can
+-- actually be hit by the current Primary swing.
 --
 -- DEVELOPMENT_BYSTANDER_CLEARANCE is also horizontal XZ studs. 12 is a
 -- safety buffer, not release balance. The current training_sword Primary
--- can connect when the 3D distance between roots is at most 11 studs
--- (Range 7 + MeleeRangeTolerance 2 + hit radius 2). Horizontal distance is
--- never larger than that 3D distance, so anyone who could be hit is inside
--- this clearance. The only allowed swing is when exactly one registered,
+-- can connect when the 3D distance between roots is at most
+-- Range + Config.Combat.MeleeRangeTolerance + Config.Combat.CharacterHitRadius.
+-- CombatService subtracts that shared CharacterHitRadius before the core
+-- applies MeleeRangeTolerance. Horizontal distance is never larger than
+-- that 3D distance, so anyone who could be hit is inside this clearance.
+-- The only allowed swing is when exactly one registered,
 -- alive player with a finite root is inside it, and that same player is
 -- training and inside DEVELOPMENT_PRACTICE_RANGE. A second such player
 -- suppresses the swing. Suppression is not an attempt and does not advance
@@ -75,7 +78,7 @@ local TrainingAttacker = {
 	DEVELOPMENT_INTERVAL_SECONDS = 2.5,
 	-- Horizontal studs. Not an approved weapon range.
 	DEVELOPMENT_PRACTICE_RANGE = 10,
-	-- Horizontal studs. Safety buffer over the 11-stud melee bound, not balance.
+	-- Horizontal studs. Safety buffer over Range + MeleeRangeTolerance + CharacterHitRadius, not balance.
 	DEVELOPMENT_BYSTANDER_CLEARANCE = 12,
 }
 
