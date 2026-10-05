@@ -6,8 +6,9 @@
 -- state, HP/MP/Stamina resets, cleanup on death/respawn/disconnect, and
 -- asking CombatService (through TrainingLifecycle) to apply or restore the
 -- temporary training hands. This service does not keep a second preset or
--- session record. Rifles, training potions, and the preset picker UI are
--- still not implemented here.
+-- session record. Temporary training health potions are wired through
+-- CombatService. Rifles and the preset picker UI are still not implemented
+-- here.
 -- Scene hookup (actual entrance/exit zone parts in a published place) is
 -- explicitly deferred to the next increment; CollectionService tag wiring
 -- below is idle until a map provides tagged parts.

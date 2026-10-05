@@ -23,7 +23,9 @@
 --   CombatService:ApplyTrainingPreset(player, presetId) -> (boolean, string?)
 --       Temporary in-memory hands for an active training session.
 --       Accepts only TrainingLoadouts preset ids. Does not call
---       PlayerDataService:Update and does not change consumables.
+--       PlayerDataService:Update and does not change PlayerData.Consumables.
+--       The first successful apply in a supply session grants the
+--       development health_potion stock. A later preset does not grant again.
 --   CombatService:RestorePersistentLoadout(player) -> (boolean, string?)
 --       Clears training hands and equips the saved PlayerData hands.
 --       Reads PlayerData. Does not call Update.
@@ -35,6 +37,8 @@
 --   { Action = "Attack", Slot = "MainHand"|"OffHand", AttackId = string, Aim = Vector3? }
 --   { Action = "Block", Active = boolean }
 --   { Action = "UseItem", ItemId = string }
+--       Outside training this spends PlayerData.Consumables.
+--       During training, health_potion spends TrainingSupplies only.
 --   { Action = "Equip", Slot = LoadoutSlot, ItemId = string | false }   false unequips
 --   { Action = "TrainingPreset", PresetId = "Swordsman"|"Mage"|"Archer" }
 --       In-memory only, and only while the training predicate is true.
@@ -65,6 +69,7 @@ local Rulesets = require(Combat.Rulesets)
 local StatusEffects = require(Combat.StatusEffects)
 local Projectile = require(Combat.Projectile)
 local TrainingLoadouts = require(Combat.TrainingLoadouts)
+local TrainingSupplies = require(Combat.TrainingSupplies)
 
 local RateLimiter = require(script.Parent.Parent.Systems.RateLimiter)
 
@@ -118,15 +123,16 @@ local CombatService = {
 local defs = Definitions.get()
 local settings = Config.Combat :: any
 local engine = CombatCore.new(defs, settings)
+local trainingSupplies = TrainingSupplies.new(Config.Combat.DevelopmentTrainingStock)
 local limiter = RateLimiter.new(Config.Combat.RateLimit.MaxRequests, Config.Combat.RateLimit.WindowSeconds)
 
 local playerData: any -- PlayerDataService, resolved in Init
 local combatEvent: RemoteEvent
 
 -- Set by TrainingGroundService:Init via CombatService:SetTrainingPredicate so
--- persistent-data mutations (UseItem/Equip) can be rejected at the server
--- boundary while a player is training, without CombatService requiring or
--- depending on TrainingGroundService (which itself depends on CombatService).
+-- Equip can be rejected, and UseItem can spend temporary training stock,
+-- at the server boundary while a player is training. CombatService does not
+-- require TrainingGroundService (which itself depends on CombatService).
 -- Defaults to "nobody is training" so behavior is unchanged until the
 -- training service registers itself.
 local isTraining: (player: Player) -> boolean = function()
@@ -337,6 +343,9 @@ local function equipSavedLoadout(player: Player, combatant: Combatant)
 end
 
 local function onCharacterAdded(player: Player, character: Model)
+	-- Death and respawn replace the character. Drop temporary stock even
+	-- when this races ahead of the ruleset restore. Clearing is idempotent.
+	trainingSupplies:clear(player)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
 	local root = character:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	if humanoid == nil or root == nil or character.Parent == nil then
@@ -667,6 +676,13 @@ end
 
 function CombatService:SetRuleset(player: Player, rulesetId: string)
 	assert(Rulesets.exists(rulesetId), `unknown ruleset "{rulesetId}"`)
+	-- A manual exit reaches this only after RestorePersistentLoadout has
+	-- succeeded. Death and a character-less exit also leave "Training"
+	-- through this call. Failed loadout restore never gets here, so that
+	-- player keeps the active training stock.
+	if playerRuleset[player] == "Training" and rulesetId ~= "Training" then
+		trainingSupplies:clear(player)
+	end
 	playerRuleset[player] = rulesetId
 	local entry = byPlayer[player]
 	if entry then
@@ -712,6 +728,9 @@ function CombatService:ApplyTrainingPreset(player: Player, presetId: unknown): (
 	if not applied then
 		return false, reason
 	end
+	-- Same active session: a later preset must not refill. Repeat Enter
+	-- does not call this at all. A new session calls it again after clear.
+	trainingSupplies:beginSession(player)
 	presentLoadout(entry, true)
 	return true, nil
 end
@@ -793,13 +812,51 @@ end
 -- Remote handling
 ---------------------------------------------------------------------------
 
+local function trainingHealBlocked(itemId: string, combatant: Combatant): boolean
+	local def = defs.Consumables[itemId]
+	local heal = if def ~= nil then def.Heal else nil
+	if heal == nil or heal <= 0 then
+		return false
+	end
+	return combatant.Health >= combatant.MaxHealth
+end
+
+local function onTrainingUseItem(entry: Entry, player: Player, itemId: string)
+	-- Temporary stock only. This branch does not call PlayerDataService:Get
+	-- or :Update, so PlayerData.Consumables cannot change here.
+	local plan = trainingSupplies:planUse(player, itemId, true, trainingHealBlocked(itemId, entry.Combatant))
+	local route: TrainingSupplies.Route = TrainingSupplies.route(plan)
+	if route == "Training" then
+		local ok, why = engine:useConsumable(
+			entry.Combatant,
+			itemId,
+			now(),
+			playerData:GetProfile(player),
+			Rulesets.get(entry.RulesetId)
+		)
+		local spent, spendWhy = trainingSupplies:finishUse(player, itemId, ok)
+		if not ok then
+			return reject(entry, why)
+		end
+		if not spent then
+			return reject(entry, spendWhy)
+		end
+		sync(entry, now())
+		broadcast({ Kind = "ItemUsed", User = entry.Model, Item = itemId })
+		return
+	elseif route == "Reject" then
+		return reject(entry, plan.Reason)
+	elseif route == "Persistent" then
+		return reject(entry, "TrainingNoPersistentUse")
+	else
+		local _exhaustive: never = route
+		return reject(entry, "Rejected")
+	end
+end
+
 local function onUseItem(entry: Entry, player: Player, itemId: string)
 	if isTraining(player) then
-		-- Persistent consumable stock must never be spent while training,
-		-- even though no training UI currently offers item usage: a client
-		-- could still send a raw UseItem request, so this is enforced at
-		-- the authoritative server boundary, not assumed from UI absence.
-		return reject(entry, "TrainingNoPersistentUse")
+		return onTrainingUseItem(entry, player, itemId)
 	end
 	local data = playerData:Get(player)
 	if data == nil or (data.Consumables[itemId] or 0) <= 0 then
@@ -959,6 +1016,7 @@ function CombatService:Start()
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
+		trainingSupplies:clear(player)
 		local entry = byPlayer[player]
 		if entry then
 			self:Unregister(entry.Model)

@@ -49,6 +49,11 @@ local Config = {
 		-- Starting gear for brand new players (must be unlocked at level 1).
 		StarterLoadout = { MainHand = "training_sword", Body = "leather_vest" },
 		StarterConsumables = { health_potion = 3 },
+		-- Development configuration only. The Product Owner has not approved
+		-- a release quantity, limit, price, or final balance. TrainingSupplies
+		-- copies this into an in-memory session. It is not StarterConsumables
+		-- and it must never be written into PlayerData.
+		DevelopmentTrainingStock = { health_potion = 2 },
 		-- Studio play-testing only, and only with the in-memory DataStore:
 		-- players start at this level so every level-gated weapon can be tried.
 		StudioStartLevel = 20,
