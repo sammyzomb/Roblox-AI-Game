@@ -1,5 +1,53 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Scene dummy block practice
+
+Studio only. The dummy standing on `TrainingDummyMarker` is the only
+practice attacker. The three older test dummies stay passive and do not
+swing. Live servers still do not spawn dummies or start this loop.
+
+The cadence is `TrainingAttacker.DEVELOPMENT_INTERVAL_SECONDS` (2.5 seconds)
+and the horizontal practice range is
+`TrainingAttacker.DEVELOPMENT_PRACTICE_RANGE` (10 studs). Both are
+development values, not approved balance and not the training sword's own
+range. Each due swing turns that one dummy to face the chosen player, then
+calls the existing `CombatService:RequestAttack` with `MainHand` /
+`Primary`. It does not chase, grant rewards, or write `PlayerData`.
+
+Older sections below that still list a timed attack-practice source as
+missing describe those earlier increments.
+
+### Studio steps (NOT YET RUN)
+
+Record the commit SHA, Play mode, and Output for each step. Until that
+record exists, every step below is **未執行**.
+
+1. Enter training from the entrance pad and choose Swordsman. Walk up to
+   the designated scene dummy on `TrainingDummyMarker`, inside about 10
+   studs. Leave the three passive test dummies alone.
+2. Stay in range without holding Block. Expected: about every 2.5 seconds
+   the existing server damage label and vital loss repeat on your
+   character. The scene dummy faces you for each swing. The three passive
+   dummies do not start those attacks.
+3. Hold Block before one of those hits lands, and remember that hit's
+   visible damage and vital loss. Release Block and wait for a later hit.
+   Expected: the blocked hit loses less health than the later unblocked
+   hit, because the existing shield path handled it. This pass does not
+   change the block formula.
+4. Walk straight out of the 10-stud practice range and stay in training.
+   Expected: new swings stop. A swing that already started can still
+   finish. Walk onto `TrainingExitPad`.
+   Expected: they stay stopped even if you then walk back beside the dummy
+   while no longer training.
+5. Enter training again, return to the scene dummy, and confirm the swings
+   resume from that one dummy. Kill or reset that scene dummy and wait for
+   the existing respawn. Expected: only the replacement continues the
+   timed swings, with no second attacker. Reset your character as well.
+   Expected: the existing training exit path stops the swings, and coming
+   back produces one source only.
+
+Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
+
 ## Development training rifle
 
 Archer's main hand is `development_training_rifle` (`Development Training Rifle`).
