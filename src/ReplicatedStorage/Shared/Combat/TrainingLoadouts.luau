@@ -7,14 +7,14 @@
 -- this module only names existing item ids and checks that those definitions
 -- can share hands.
 --
--- The approved rifle is still absent from Definitions. This module does not
--- invent one. See MISSING_RIFLE.
+-- Archer's main hand is the development training rifle in Data/Weapons.luau.
+-- That weapon is not approved release balance. See DEVELOPMENT_RIFLE.
 --
 -- Public API:
 --   TrainingLoadouts.DEFAULT_PRESET_ID            "Swordsman"
 --   TrainingLoadouts.PRESET_IDS                   { "Swordsman", "Mage", "Archer" }
 --   TrainingLoadouts.SELECTION_ACTION             "TrainingPreset"
---   TrainingLoadouts.MISSING_RIFLE                dependency note, not an item id
+--   TrainingLoadouts.DEVELOPMENT_RIFLE            development training rifle item id
 --   TrainingLoadouts.itemIds(presetId) -> { string }?
 --   TrainingLoadouts.validatePresetId(value) -> (string?, string?)
 --   TrainingLoadouts.validateSelectionRequest(request) -> (string?, string?)
@@ -84,10 +84,12 @@ export type PresetPresentationStore = {
 	notePresetRequest: (presetId: unknown) -> (),
 }
 
+local DEVELOPMENT_RIFLE = "development_training_rifle"
+
 local PRESET_ITEMS: { [string]: { string } } = {
 	Swordsman = { "training_sword", "wooden_shield" },
 	Mage = { "ember_staff" },
-	Archer = { "hunting_bow" },
+	Archer = { DEVELOPMENT_RIFLE },
 }
 
 local PRESET_ORDER = { "Swordsman", "Mage", "Archer" }
@@ -96,7 +98,7 @@ local TrainingLoadouts = {
 	DEFAULT_PRESET_ID = "Swordsman",
 	PRESET_IDS = table.freeze({ "Swordsman", "Mage", "Archer" }),
 	SELECTION_ACTION = "TrainingPreset",
-	MISSING_RIFLE = "approved rifle weapon is absent from Definitions; no rifle preset is defined",
+	DEVELOPMENT_RIFLE = DEVELOPMENT_RIFLE,
 }
 
 local function copyIds(ids: { string }): { string }

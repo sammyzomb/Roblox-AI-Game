@@ -165,6 +165,30 @@ return {
 			},
 		},
 	},
+	-- Development-only training rifle. Not an approved firearm and not
+	-- release balance. Ordinary profiles do not receive the milestone below,
+	-- so the public Equip path stays locked while ownership hardening is absent.
+	development_training_rifle = {
+		Name = "Development Training Rifle",
+		Family = "Rifle",
+		Archetype = "RangedPhysical",
+		Slot = "MainHand",
+		TwoHanded = true,
+		Tier = 1,
+		Unlock = { Milestones = { "development_training_rifle" } },
+		Attacks = {
+			Primary = {
+				Delivery = "Projectile",
+				-- Development damage, not approved release balance.
+				Damage = { { Type = "Pierce", Amount = 14 } },
+				-- Development projectile speed, not approved release balance.
+				Projectile = { Speed = 220, Radius = 0.45, MaxRange = 170 },
+				Windup = 0.2, Recovery = 0.25,
+				-- Development magazine capacity and reload time, not approved release balance.
+				Ammo = { Capacity = 6, ReloadTime = 1.4 },
+			},
+		},
+	},
 	throwing_knives = {
 		Name = "Throwing Knives",
 		Family = "Throwing",
