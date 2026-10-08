@@ -208,31 +208,49 @@ Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this pass.
 Placeholder buttons for the three temporary presets. The selector stays
 hidden until the owning client receives a valid `CombatEvent`
 `Kind = "Loadout"` with `Temporary = true`. A valid `Temporary = false`
-event hides it again. A malformed or unrelated event does not change
-whether it is showing or which option is highlighted.
+event hides it again and clears the guidance text. A malformed or
+unrelated event does not change whether it is showing or which option is
+confirmed.
 
 The options are exactly `TrainingLoadouts.PRESET_IDS` (Swordsman, Mage,
 Archer). Each one is a `TextButton` at least 48 px tall. Mouse and touch
 use `Activated` and call `CombatController.selectTrainingPreset`. That
 sends the existing `TrainingPreset` request and does not send item ids.
-The click does not highlight the option. The highlight changes only after
-a later validated Loadout event's hands match that preset.
+The click does not add the check, the gold border, or the confirmed line.
+Those appear only after a later validated Loadout event's hands match
+that preset. `AutoButtonColor` is false. Pointer enter and leave change
+only background transparency, then reapply the confirmed check, border,
+text, and colors, so hover does not replace the confirmed identity.
 `CombatController` is the only `CombatEvent` listener for this state; a
 UI script that starts later reads the cached snapshot.
 
-The panel is placed on the left, just below the top coin/level HUD.
-Clearance from that HUD, the centered bottom stamina/mana bars, and the
-bottom-right ContextActionService combat buttons is expected; Studio not
-yet run. The panel `Frame.Active` is true so its padding and the gaps
-between buttons are expected to sink GUI input; Studio not yet run.
-`Active = true` does not prove ContextActionService will suppress
-`MouseButton1`. This is not final art.
+While the selector is visible, Traditional Chinese lines say this is
+temporary training equipment, which preset is confirmed (or that none is
+confirmed yet), and a short next step. A separate line names
+`TrainingDummyMarker` and the X/Z from `TrainingSceneConfig.resolve`
+(not a second copy of the offset). It says that scene dummy is the
+attacker used for block practice, that the three birth-area dummies are
+passive targets, and to walk there, left-click to attack, and hold F to
+block. That line does not report damage or a successful block. An
+unidentified temporary weapon still shows the guidance and confirms no
+preset.
+
+The panel is placed on the left, just below the top coin/level HUD, and
+is wider and taller than the three buttons alone. Clearance from that
+HUD, the centered bottom stamina/mana bars, the bottom-left movement
+joystick, and the bottom-right ContextActionService combat buttons is
+expected; Studio not yet run. The panel and its text labels are `Active`
+so padding, gaps, and the guidance text are expected to sink GUI input;
+Studio not yet run. `Active = true` does not prove ContextActionService
+will suppress `MouseButton1`. This is not final art.
 
 Pure tests cover visibility, all three presets, a nil event passed
 explicitly, malformed events, a request that leaves the highlight
-unchanged, a subscriber that arrives after the event, and a listener
-error that does not skip the next listener. They do not create Instances
-and do not prove touch layout or mouse sinking in Studio.
+unchanged, pointer-leave identity, three-way switching, the scene-marker
+cue and its exit clear, a subscriber that arrives after the event, and a
+listener error that does not skip the next listener. They do not create
+Instances and do not prove touch layout, hover pixels, or mouse sinking
+in Studio.
 
 ### Studio steps (NOT YET RUN)
 
@@ -269,7 +287,36 @@ record exists, every step below is **未執行**.
    touch buttons, the movement joystick start region, or the open chat
    window. Tapping a preset does not also fire Attack.
 10. Enter again, then reset the character or die. After respawn the
-    selector is hidden and the new character wears the saved loadout.
+    selector is hidden, the guidance text is cleared, and the new
+    character wears the saved loadout.
+11. Pointer leave: after Mage's Loadout arrives, move the pointer onto
+    Mage, then onto Archer, then off every button. Expected; Studio not
+    yet run: Mage keeps the check, the gold border, the confirmed colors,
+    and the「已確認」line. Archer does not gain them from the hover.
+    Leaving the button does not restore the idle look on Mage.
+12. Three-way switch: confirm Swordsman, then Mage, then Archer, then
+    Swordsman again, waiting for each Loadout. Expected; Studio not yet
+    run: only the preset in that Loadout shows the check and border, and
+    the confirmed line names that preset. The other two stay idle. A
+    click before the Loadout does not announce that the new preset is
+    equipped.
+13. Passive versus attacking target: with the selector visible, read the
+    guidance. Expected; Studio not yet run: it names `TrainingDummyMarker`,
+    says that scene dummy attacks and is for block practice, says the
+    three birth-area dummies do not attack, and tells the player to walk
+    there, left-click to attack, and hold F to block. It does not say the
+    block or the hit already succeeded.
+14. Exit and reset: walk onto `TrainingExitPad`, then enter again and
+    reset the character. Expected; Studio not yet run: both the exit and
+    the reset hide the selector and clear the guidance. A later coin or
+    XP update does not bring either back.
+15. Mobile overlap: phone or touch emulator, with the taller guidance
+    panel. Expected; Studio not yet run: the panel stays in the upper
+    left, inside the safe area, and does not cover the top HUD, the
+    bottom stamina/mana bars, the Attack, Skill, Off, Block, and Potion
+    touch buttons, or the movement joystick. Tapping the guidance text
+    does not fire Attack. Whether `Active` actually sinks
+    `MouseButton1` remains a Studio check.
 
 Status: **NOT YET RUN IN STUDIO.** No Studio session was run for this
 selector. Do not treat these steps as a playable pass.
