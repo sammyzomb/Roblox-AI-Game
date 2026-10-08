@@ -43,6 +43,17 @@
 --       Anything else returns the same state.
 --   TrainingLoadouts.presentationAfterPresetRequest(state, presetId) -> state
 --       A button request is not confirmation. This returns the same state.
+--   TrainingLoadouts.selectionIdentity(presentation, presetId, pointerOver?) -> identity
+--       Confirmed check/border for one option. pointerOver is ignored, so
+--       hover cannot grant or remove a confirmed identity.
+--   TrainingLoadouts.presetStatus(presentation) -> status
+--       Panel purpose, the confirmed preset id, and whether the next step
+--       is still "choose" or "walk to the scene dummy". Derived only from
+--       the presentation above. It does not record damage or a block result.
+--   TrainingLoadouts.practiceCue(presentation, scene) -> cue
+--       While Visible, copies the caller-supplied marker name, marker point,
+--       and passive-dummy count. A hidden presentation returns an empty cue.
+--       The scene point is not invented here.
 --   TrainingLoadouts.createPresetPresentationStore() -> store
 --       Caches that presentation so a later subscriber gets the snapshot.
 --       The immediate subscribe callback and every notify callback run in
@@ -73,6 +84,37 @@ export type AttackMap = {
 export type PresetPresentation = {
 	Visible: boolean,
 	SelectedPresetId: string?,
+}
+
+export type SelectionIdentity = {
+	PresetId: string,
+	Confirmed: boolean,
+	ShowCheck: boolean,
+	ShowBorder: boolean,
+}
+
+export type PresetNextStep = "Choose" | "WalkToDummy"
+
+export type PresetStatus = {
+	PurposeVisible: boolean,
+	ConfirmedPresetId: string?,
+	AwaitingConfirmation: boolean,
+	NextStep: PresetNextStep,
+}
+
+export type PracticeScene = {
+	MarkerName: string,
+	Marker: { X: number, Y: number, Z: number },
+	PassiveCount: number,
+}
+
+export type PracticeCue = {
+	Visible: boolean,
+	MarkerName: string,
+	MarkerX: number,
+	MarkerY: number,
+	MarkerZ: number,
+	PassiveCount: number,
 }
 
 export type PresetPresentationListener = (presentation: PresetPresentation) -> ()
@@ -473,6 +515,61 @@ end
 
 function TrainingLoadouts.presentationAfterPresetRequest(state: PresetPresentation, _presetId: unknown): PresetPresentation
 	return state
+end
+
+-- Hover is not an input to confirmation. The third argument is accepted so
+-- a caller can pass pointer-over state and tests can show it changes nothing.
+function TrainingLoadouts.selectionIdentity(
+	presentation: PresetPresentation,
+	presetId: string,
+	_pointerOver: boolean?
+): SelectionIdentity
+	local confirmed = presentation.Visible == true and presentation.SelectedPresetId == presetId
+	return table.freeze({
+		PresetId = presetId,
+		Confirmed = confirmed,
+		ShowCheck = confirmed,
+		ShowBorder = confirmed,
+	})
+end
+
+function TrainingLoadouts.presetStatus(presentation: PresetPresentation): PresetStatus
+	local confirmed = if presentation.Visible == true then presentation.SelectedPresetId else nil
+	local nextStep: PresetNextStep = if confirmed ~= nil then "WalkToDummy" else "Choose"
+	return table.freeze({
+		PurposeVisible = presentation.Visible == true,
+		ConfirmedPresetId = confirmed,
+		AwaitingConfirmation = presentation.Visible == true and confirmed == nil,
+		NextStep = nextStep,
+	})
+end
+
+local function emptyPracticeCue(): PracticeCue
+	return table.freeze({
+		Visible = false,
+		MarkerName = "",
+		MarkerX = 0,
+		MarkerY = 0,
+		MarkerZ = 0,
+		PassiveCount = 0,
+	})
+end
+
+-- Copies the supplied scene only while training presentation is visible.
+-- Hidden cues drop the point so an exit cannot leave a stale target on screen.
+function TrainingLoadouts.practiceCue(presentation: PresetPresentation, scene: PracticeScene): PracticeCue
+	if presentation.Visible ~= true then
+		return emptyPracticeCue()
+	end
+	local marker = scene.Marker
+	return table.freeze({
+		Visible = true,
+		MarkerName = scene.MarkerName,
+		MarkerX = marker.X,
+		MarkerY = marker.Y,
+		MarkerZ = marker.Z,
+		PassiveCount = scene.PassiveCount,
+	})
 end
 
 local function deliverPresetPresentation(listener: PresetPresentationListener, presentation: PresetPresentation)

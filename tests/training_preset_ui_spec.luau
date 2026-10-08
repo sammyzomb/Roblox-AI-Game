@@ -5,6 +5,16 @@
 
 return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 	local TrainingLoadouts = require("../src/ReplicatedStorage/Shared/Combat/TrainingLoadouts")
+	local TrainingSceneConfig = require("../src/ReplicatedStorage/Shared/Combat/TrainingSceneConfig")
+
+	local function practiceScene()
+		local marker = TrainingSceneConfig.resolve().DummyMarker
+		return {
+			MarkerName = "TrainingDummyMarker",
+			Marker = marker,
+			PassiveCount = 3,
+		}, marker
+	end
 
 	local function presetEvent(presetId: string, temporary: boolean)
 		local items = TrainingLoadouts.itemIds(presetId)
@@ -126,6 +136,12 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(lateSelection, "Archer")
 		eq(store.get().Visible, true, "snapshot mutation does not change the cache")
 		eq(store.get().SelectedPresetId, "Archer")
+		eq(TrainingLoadouts.selectionIdentity(store.get(), "Archer", true).Confirmed, true)
+		eq(TrainingLoadouts.selectionIdentity(store.get(), "Mage", true).Confirmed, false)
+		eq(TrainingLoadouts.presetStatus(store.get()).ConfirmedPresetId, "Archer")
+		local scene = practiceScene()
+		eq(TrainingLoadouts.practiceCue(store.get(), scene).Visible, true)
+		eq(TrainingLoadouts.practiceCue(store.get(), scene).MarkerName, "TrainingDummyMarker")
 
 		early()
 		late()
@@ -134,6 +150,9 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(lateCalls, 1, "disconnected late listener stays quiet")
 		eq(store.get().Visible, false)
 		eq(store.get().SelectedPresetId, nil)
+		eq(TrainingLoadouts.presetStatus(store.get()).PurposeVisible, false)
+		eq(TrainingLoadouts.practiceCue(store.get(), scene).Visible, false)
+		eq(TrainingLoadouts.selectionIdentity(store.get(), "Archer", true).ShowCheck, false)
 
 		local after = store.subscribe(function(presentation)
 			eq(presentation.Visible, false)
@@ -205,6 +224,157 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(healthyCalls, 3, "the healthy listener still receives the restore")
 		eq(store.get().Visible, false)
 		eq(store.get().SelectedPresetId, nil)
+	end)
+
+	test("pointer leave keeps the confirmed check and border", function()
+		local shown = TrainingLoadouts.applyPresetPresentation(
+			TrainingLoadouts.emptyPresetPresentation(),
+			presetEvent("Mage", true)
+		)
+		for _, presetId in TrainingLoadouts.PRESET_IDS do
+			local hovered = TrainingLoadouts.selectionIdentity(shown, presetId, true)
+			local left = TrainingLoadouts.selectionIdentity(shown, presetId, false)
+			local confirmed = presetId == "Mage"
+			eq(hovered.Confirmed, confirmed, `{presetId} hover`)
+			eq(left.Confirmed, confirmed, `{presetId} leave`)
+			eq(left.ShowCheck, hovered.ShowCheck, `{presetId} check`)
+			eq(left.ShowBorder, hovered.ShowBorder, `{presetId} border`)
+			eq(left.ShowCheck, confirmed, `{presetId} check matches confirmation`)
+			eq(left.ShowBorder, confirmed, `{presetId} border matches confirmation`)
+			eq(left.PresetId, presetId)
+		end
+		local hidden = TrainingLoadouts.emptyPresetPresentation()
+		local idleHover = TrainingLoadouts.selectionIdentity(hidden, "Swordsman", true)
+		eq(idleHover.Confirmed, false)
+		eq(idleHover.ShowCheck, false)
+		eq(idleHover.ShowBorder, false)
+	end)
+
+	test("an unconfirmed click does not mark a preset successful", function()
+		local hidden = TrainingLoadouts.emptyPresetPresentation()
+		local requested = TrainingLoadouts.presentationAfterPresetRequest(hidden, "Archer")
+		local hiddenStatus = TrainingLoadouts.presetStatus(requested)
+		eq(hiddenStatus.PurposeVisible, false)
+		eq(hiddenStatus.ConfirmedPresetId, nil)
+		eq(hiddenStatus.AwaitingConfirmation, false)
+		eq(hiddenStatus.NextStep, "Choose")
+		eq(TrainingLoadouts.selectionIdentity(requested, "Archer", true).Confirmed, false)
+
+		local mage = TrainingLoadouts.applyPresetPresentation(requested, presetEvent("Mage", true))
+		local clicked = TrainingLoadouts.presentationAfterPresetRequest(mage, "Archer")
+		eq(clicked, mage)
+		local status = TrainingLoadouts.presetStatus(clicked)
+		eq(status.ConfirmedPresetId, "Mage")
+		eq(status.NextStep, "WalkToDummy")
+		eq(TrainingLoadouts.selectionIdentity(clicked, "Archer", true).Confirmed, false)
+		eq(TrainingLoadouts.selectionIdentity(clicked, "Archer", true).ShowCheck, false)
+		eq(TrainingLoadouts.selectionIdentity(clicked, "Mage", false).ShowCheck, true)
+		local rejected = TrainingLoadouts.applyPresetPresentation(clicked, { Kind = "Rejected", Reason = "Busy" })
+		eq(TrainingLoadouts.presetStatus(rejected).ConfirmedPresetId, "Mage")
+		eq(TrainingLoadouts.selectionIdentity(rejected, "Mage", false).ShowBorder, true)
+		eq(TrainingLoadouts.selectionIdentity(rejected, "Swordsman", true).Confirmed, false)
+	end)
+
+	test("switching presets confirms only the server loadout", function()
+		local state = TrainingLoadouts.emptyPresetPresentation()
+		for _, presetId in TrainingLoadouts.PRESET_IDS do
+			state = TrainingLoadouts.applyPresetPresentation(state, presetEvent(presetId, true))
+			local status = TrainingLoadouts.presetStatus(state)
+			eq(status.PurposeVisible, true, presetId)
+			eq(status.ConfirmedPresetId, presetId, presetId)
+			eq(status.AwaitingConfirmation, false, presetId)
+			eq(status.NextStep, "WalkToDummy", presetId)
+			for _, other in TrainingLoadouts.PRESET_IDS do
+				local identity = TrainingLoadouts.selectionIdentity(state, other, other ~= presetId)
+				eq(identity.Confirmed, other == presetId, `{presetId}->{other}`)
+				eq(identity.ShowCheck, other == presetId, `{presetId}->{other} check`)
+				eq(identity.ShowBorder, other == presetId, `{presetId}->{other} border`)
+			end
+		end
+	end)
+
+	test("active training points at the scene marker and exit clears it", function()
+		local scene, marker = practiceScene()
+		local hiddenCue = TrainingLoadouts.practiceCue(TrainingLoadouts.emptyPresetPresentation(), scene)
+		eq(hiddenCue.Visible, false)
+		eq(hiddenCue.MarkerName, "")
+		eq(hiddenCue.MarkerX, 0)
+		eq(hiddenCue.MarkerZ, 0)
+		eq(hiddenCue.PassiveCount, 0)
+		eq((hiddenCue :: any).Damage, nil)
+		eq((hiddenCue :: any).Blocked, nil)
+
+		local shown = TrainingLoadouts.applyPresetPresentation(
+			TrainingLoadouts.emptyPresetPresentation(),
+			presetEvent("Swordsman", true)
+		)
+		local cue = TrainingLoadouts.practiceCue(shown, scene)
+		eq(cue.Visible, true)
+		eq(cue.MarkerName, "TrainingDummyMarker")
+		eq(cue.MarkerX, marker.X)
+		eq(cue.MarkerY, marker.Y)
+		eq(cue.MarkerZ, marker.Z)
+		eq(cue.PassiveCount, 3)
+		eq((cue :: any).Damage, nil)
+		eq((cue :: any).Blocked, nil)
+		eq((cue :: any).Success, nil)
+
+		local unknown = TrainingLoadouts.applyPresetPresentation(shown, {
+			Kind = "Loadout",
+			Temporary = true,
+			MainHand = "iron_greatsword",
+			OffHand = false,
+		})
+		local unknownStatus = TrainingLoadouts.presetStatus(unknown)
+		eq(unknownStatus.AwaitingConfirmation, true)
+		eq(unknownStatus.ConfirmedPresetId, nil)
+		eq(unknownStatus.NextStep, "Choose")
+		eq(TrainingLoadouts.practiceCue(unknown, scene).Visible, true)
+		for _, presetId in TrainingLoadouts.PRESET_IDS do
+			eq(TrainingLoadouts.selectionIdentity(unknown, presetId, true).Confirmed, false, presetId)
+		end
+
+		local restored = TrainingLoadouts.applyPresetPresentation(unknown, presetEvent("Swordsman", false))
+		local cleared = TrainingLoadouts.practiceCue(restored, scene)
+		eq(TrainingLoadouts.presetStatus(restored).PurposeVisible, false)
+		eq(TrainingLoadouts.presetStatus(restored).ConfirmedPresetId, nil)
+		eq(cleared.Visible, false)
+		eq(cleared.MarkerName, "")
+		eq(cleared.PassiveCount, 0)
+		for _, presetId in TrainingLoadouts.PRESET_IDS do
+			eq(TrainingLoadouts.selectionIdentity(restored, presetId, true).ShowCheck, false, presetId)
+		end
+	end)
+
+	test("malformed events do not replace the confirmed identity or the cue", function()
+		local scene = practiceScene()
+		local shown = TrainingLoadouts.applyPresetPresentation(
+			TrainingLoadouts.emptyPresetPresentation(),
+			presetEvent("Archer", true)
+		)
+		local cue = TrainingLoadouts.practiceCue(shown, scene)
+		local events = {
+			{ Kind = "Hit", Damage = 4, Temporary = true },
+			{ Kind = "Rejected", Reason = "Busy" },
+			{ Coins = 3, Loadout = { MainHand = "training_sword", OffHand = "wooden_shield" } },
+			{ Kind = "Loadout", Temporary = "true", MainHand = "ember_staff", OffHand = false },
+			nil,
+		}
+		for _, event in events do
+			local nextState = TrainingLoadouts.applyPresetPresentation(shown, event)
+			eq(nextState, shown)
+			local status = TrainingLoadouts.presetStatus(nextState)
+			eq(status.ConfirmedPresetId, "Archer")
+			eq(status.NextStep, "WalkToDummy")
+			eq(TrainingLoadouts.selectionIdentity(nextState, "Archer", false).ShowBorder, true)
+			eq(TrainingLoadouts.selectionIdentity(nextState, "Mage", true).Confirmed, false)
+			local nextCue = TrainingLoadouts.practiceCue(nextState, scene)
+			eq(nextCue.Visible, cue.Visible)
+			eq(nextCue.MarkerName, cue.MarkerName)
+			eq(nextCue.MarkerX, cue.MarkerX)
+			eq(nextCue.MarkerZ, cue.MarkerZ)
+			eq(nextCue.PassiveCount, cue.PassiveCount)
+		end
 	end)
 
 	test("the selector reducer does not clear a latched training attack map", function()
