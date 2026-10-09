@@ -21,11 +21,13 @@
 -- The panel stays up after a click so the player can switch among the
 -- three presets. Traditional Chinese lines state that the equipment is
 -- temporary, which preset is confirmed, and the next step. While the
--- server says training is active, a second line points at the existing
--- TrainingDummyMarker (coordinates from TrainingSceneConfig, not a second
--- layout) and distinguishes that attacking scene dummy from the three
--- passive birth-area dummies. The line does not report damage or a block
--- result. Temporary=false hides the panel and clears the guidance text.
+-- server says training is active, a second line tells the player where to
+-- walk. That place is the existing TrainingSceneConfig dummy point
+-- compared with the same resolve() origin, entrance, and exit. The line
+-- does not print a part name or raw coordinates. It distinguishes the
+-- attacking scene dummy from the three passive birth-area dummies, and it
+-- does not report damage or a block result. Temporary=false hides the
+-- panel and clears the guidance text.
 --
 -- Placement is the left side, just below the top coin/level HUD (that
 -- panel ends near y=96), clear of the centered bottom stamina/mana bars
@@ -50,12 +52,15 @@ local PANEL_PADDING = 8
 local BUTTON_GAP = 6
 local BUTTON_ORDER = 10
 
--- TrainingSceneBootstrap names the anchor part. The three birth-area
--- dummies are the passive specs in TrainingDummyService; this count is
--- that existing set, not a new spawn list.
+-- The three birth-area dummies are the passive specs in TrainingDummyService.
+-- This count is that existing set, not a new spawn list. The marker point
+-- is only an input to ordinary place words; this script does not print it.
+local SCENE_POINTS = TrainingSceneConfig.resolve()
 local SCENE_FACTS: TrainingLoadouts.PracticeScene = {
-	MarkerName = "TrainingDummyMarker",
-	Marker = TrainingSceneConfig.resolve().DummyMarker,
+	Marker = SCENE_POINTS.DummyMarker,
+	Origin = SCENE_POINTS.Origin,
+	Entrance = SCENE_POINTS.Entrance,
+	Exit = SCENE_POINTS.Exit,
 	PassiveCount = 3,
 }
 
@@ -165,13 +170,6 @@ local function statusLines(status: TrainingLoadouts.PresetStatus): (string, stri
 	return "暫時訓練裝備", confirmed, nextStep
 end
 
-local function guidanceLine(cue: TrainingLoadouts.PracticeCue): string
-	if cue.Visible ~= true then
-		return ""
-	end
-	return `場景假人在 {cue.MarkerName}（X {cue.MarkerX}、Z {cue.MarkerZ}），會攻擊，用來練習格擋。出生區 {cue.PassiveCount} 個假人不會攻擊，是被動目標。左鍵攻擊，按住 F 格擋，走過去。`
-end
-
 local buttons: { [string]: TextButton } = {}
 local strokes: { [string]: UIStroke } = {}
 local lastPresentation = TrainingLoadouts.emptyPresetPresentation()
@@ -197,7 +195,7 @@ local function render(presentation: TrainingLoadouts.PresetPresentation)
 	purposeLabel.Text = purpose
 	confirmedLabel.Text = confirmed
 	nextLabel.Text = nextStep
-	guidanceLabel.Text = guidanceLine(cue)
+	guidanceLabel.Text = cue.Text
 	gui.Enabled = presentation.Visible
 	for presetId in buttons do
 		applyButton(presetId, presentation, false)

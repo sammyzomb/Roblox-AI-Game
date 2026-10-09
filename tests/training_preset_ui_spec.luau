@@ -7,13 +7,32 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 	local TrainingLoadouts = require("../src/ReplicatedStorage/Shared/Combat/TrainingLoadouts")
 	local TrainingSceneConfig = require("../src/ReplicatedStorage/Shared/Combat/TrainingSceneConfig")
 
-	local function practiceScene()
-		local marker = TrainingSceneConfig.resolve().DummyMarker
+	local function practiceScene(marker: { X: number, Y: number, Z: number }?)
+		local points = TrainingSceneConfig.resolve()
 		return {
-			MarkerName = "TrainingDummyMarker",
-			Marker = marker,
+			Marker = if marker ~= nil then marker else points.DummyMarker,
+			Origin = points.Origin,
+			Entrance = points.Entrance,
+			Exit = points.Exit,
 			PassiveCount = 3,
-		}, marker
+		}, points
+	end
+
+	local function assertNoDebugCue(text: string, marker: { X: number, Y: number, Z: number })
+		eq(string.find(text, "TrainingDummyMarker", 1, true), nil)
+		eq(string.find(text, "DummyMarker", 1, true), nil)
+		eq(string.find(text, "X ", 1, true), nil)
+		eq(string.find(text, "Z ", 1, true), nil)
+		local xText = tostring(marker.X)
+		local zText = tostring(marker.Z)
+		if #xText >= 2 then
+			eq(string.find(text, xText, 1, true), nil, "marker X")
+		end
+		if #zText >= 2 then
+			eq(string.find(text, zText, 1, true), nil, "marker Z")
+		end
+		eq(string.find(text, "傷害", 1, true), nil)
+		eq(string.find(text, "成功", 1, true), nil)
 	end
 
 	local function presetEvent(presetId: string, temporary: boolean)
@@ -139,9 +158,11 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(TrainingLoadouts.selectionIdentity(store.get(), "Archer", true).Confirmed, true)
 		eq(TrainingLoadouts.selectionIdentity(store.get(), "Mage", true).Confirmed, false)
 		eq(TrainingLoadouts.presetStatus(store.get()).ConfirmedPresetId, "Archer")
-		local scene = practiceScene()
-		eq(TrainingLoadouts.practiceCue(store.get(), scene).Visible, true)
-		eq(TrainingLoadouts.practiceCue(store.get(), scene).MarkerName, "TrainingDummyMarker")
+		local scene, points = practiceScene()
+		local shownCue = TrainingLoadouts.practiceCue(store.get(), scene)
+		eq(shownCue.Visible, true)
+		eq(string.find(shownCue.Text, "被動目標", 1, true) ~= nil, true)
+		assertNoDebugCue(shownCue.Text, points.DummyMarker)
 
 		early()
 		late()
@@ -293,14 +314,11 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		end
 	end)
 
-	test("active training points at the scene marker and exit clears it", function()
-		local scene, marker = practiceScene()
+	test("active training uses ordinary guidance and exit clears it", function()
+		local scene, points = practiceScene()
 		local hiddenCue = TrainingLoadouts.practiceCue(TrainingLoadouts.emptyPresetPresentation(), scene)
 		eq(hiddenCue.Visible, false)
-		eq(hiddenCue.MarkerName, "")
-		eq(hiddenCue.MarkerX, 0)
-		eq(hiddenCue.MarkerZ, 0)
-		eq(hiddenCue.PassiveCount, 0)
+		eq(hiddenCue.Text, "")
 		eq((hiddenCue :: any).Damage, nil)
 		eq((hiddenCue :: any).Blocked, nil)
 
@@ -310,14 +328,24 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		)
 		local cue = TrainingLoadouts.practiceCue(shown, scene)
 		eq(cue.Visible, true)
-		eq(cue.MarkerName, "TrainingDummyMarker")
-		eq(cue.MarkerX, marker.X)
-		eq(cue.MarkerY, marker.Y)
-		eq(cue.MarkerZ, marker.Z)
-		eq(cue.PassiveCount, 3)
+		eq(cue.Text, "走進訓練場後，到場地中央再往旁邊，找會攻擊你的假人來練習格擋。出生區的三個假人不會攻擊，是被動目標。靠近後用左鍵攻擊，按住 F 格擋。")
+		assertNoDebugCue(cue.Text, points.DummyMarker)
+		eq(string.find(cue.Text, "會攻擊你的假人", 1, true) ~= nil, true)
+		eq(string.find(cue.Text, "練習格擋", 1, true) ~= nil, true)
+		eq(string.find(cue.Text, "不會攻擊", 1, true) ~= nil, true)
+		eq(string.find(cue.Text, "左鍵攻擊", 1, true) ~= nil, true)
+		eq(string.find(cue.Text, "按住 F 格擋", 1, true) ~= nil, true)
+		eq((cue :: any).MarkerName, nil)
+		eq((cue :: any).MarkerX, nil)
 		eq((cue :: any).Damage, nil)
 		eq((cue :: any).Blocked, nil)
 		eq((cue :: any).Success, nil)
+		local centered = TrainingLoadouts.practiceCue(shown, practiceScene(points.Origin))
+		eq(string.find(centered.Text, "到場地正中央", 1, true) ~= nil, true)
+		eq(string.find(centered.Text, "往旁邊", 1, true), nil)
+		local towardExit = TrainingLoadouts.practiceCue(shown, practiceScene(points.Exit))
+		eq(string.find(towardExit.Text, "靠近出口", 1, true) ~= nil, true)
+		assertNoDebugCue(towardExit.Text, points.Exit)
 
 		local unknown = TrainingLoadouts.applyPresetPresentation(shown, {
 			Kind = "Loadout",
@@ -339,8 +367,7 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 		eq(TrainingLoadouts.presetStatus(restored).PurposeVisible, false)
 		eq(TrainingLoadouts.presetStatus(restored).ConfirmedPresetId, nil)
 		eq(cleared.Visible, false)
-		eq(cleared.MarkerName, "")
-		eq(cleared.PassiveCount, 0)
+		eq(cleared.Text, "")
 		for _, presetId in TrainingLoadouts.PRESET_IDS do
 			eq(TrainingLoadouts.selectionIdentity(restored, presetId, true).ShowCheck, false, presetId)
 		end
@@ -370,10 +397,8 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			eq(TrainingLoadouts.selectionIdentity(nextState, "Mage", true).Confirmed, false)
 			local nextCue = TrainingLoadouts.practiceCue(nextState, scene)
 			eq(nextCue.Visible, cue.Visible)
-			eq(nextCue.MarkerName, cue.MarkerName)
-			eq(nextCue.MarkerX, cue.MarkerX)
-			eq(nextCue.MarkerZ, cue.MarkerZ)
-			eq(nextCue.PassiveCount, cue.PassiveCount)
+			eq(nextCue.Text, cue.Text)
+			assertNoDebugCue(nextCue.Text, scene.Marker)
 		end
 	end)
 
