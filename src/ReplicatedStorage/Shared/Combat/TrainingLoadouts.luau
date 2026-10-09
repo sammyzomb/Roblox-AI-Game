@@ -51,9 +51,11 @@
 --       is still "choose" or "walk to the scene dummy". Derived only from
 --       the presentation above. It does not record damage or a block result.
 --   TrainingLoadouts.practiceCue(presentation, scene) -> cue
---       While Visible, copies the caller-supplied marker name, marker point,
---       and passive-dummy count. A hidden presentation returns an empty cue.
---       The scene point is not invented here.
+--       While Visible, writes one Traditional Chinese sentence. The place
+--       words come from the caller-supplied marker compared with the same
+--       scene's origin, entrance, and exit. The sentence does not include
+--       a part name or raw coordinates, and it does not claim damage or a
+--       successful block. A hidden presentation returns an empty sentence.
 --   TrainingLoadouts.createPresetPresentationStore() -> store
 --       Caches that presentation so a later subscriber gets the snapshot.
 --       The immediate subscribe callback and every notify callback run in
@@ -103,18 +105,16 @@ export type PresetStatus = {
 }
 
 export type PracticeScene = {
-	MarkerName: string,
 	Marker: { X: number, Y: number, Z: number },
+	Origin: { X: number, Y: number, Z: number },
+	Entrance: { X: number, Y: number, Z: number },
+	Exit: { X: number, Y: number, Z: number },
 	PassiveCount: number,
 }
 
 export type PracticeCue = {
 	Visible: boolean,
-	MarkerName: string,
-	MarkerX: number,
-	MarkerY: number,
-	MarkerZ: number,
-	PassiveCount: number,
+	Text: string,
 }
 
 export type PresetPresentationListener = (presentation: PresetPresentation) -> ()
@@ -544,31 +544,68 @@ function TrainingLoadouts.presetStatus(presentation: PresetPresentation): Preset
 	})
 end
 
-local function emptyPracticeCue(): PracticeCue
+-- Wording threshold only. Scene sizes stay in TrainingSceneConfig.
+local SIDE_SLACK = 8
+
+local function xSideLabel(markerDx: number, entranceDx: number, exitDx: number): string?
+	if math.abs(markerDx) < SIDE_SLACK then
+		return nil
+	end
+	if entranceDx ~= 0 and markerDx * entranceDx > 0 then
+		return "靠近入口"
+	end
+	if exitDx ~= 0 and markerDx * exitDx > 0 then
+		return "靠近出口"
+	end
+	return "偏到一側"
+end
+
+local function destinationClause(scene: PracticeScene): string
+	local origin = scene.Origin
+	local marker = scene.Marker
+	local xSide = xSideLabel(marker.X - origin.X, scene.Entrance.X - origin.X, scene.Exit.X - origin.X)
+	local aside = math.abs(marker.Z - origin.Z) >= SIDE_SLACK
+	if xSide == nil and aside == false then
+		return "到場地正中央"
+	elseif xSide == nil and aside == true then
+		return "到場地中央再往旁邊"
+	elseif xSide ~= nil and aside == false then
+		return `走到{xSide}的位置`
+	elseif xSide ~= nil and aside == true then
+		return `走到{xSide}、再往旁邊的位置`
+	end
+	error("[TrainingLoadouts] unreachable practice destination")
+end
+
+local function countWord(count: number): string
+	if count == 1 then
+		return "一"
+	elseif count == 2 then
+		return "兩"
+	elseif count == 3 then
+		return "三"
+	end
+	return tostring(count)
+end
+
+local function hiddenPracticeCue(): PracticeCue
 	return table.freeze({
 		Visible = false,
-		MarkerName = "",
-		MarkerX = 0,
-		MarkerY = 0,
-		MarkerZ = 0,
-		PassiveCount = 0,
+		Text = "",
 	})
 end
 
--- Copies the supplied scene only while training presentation is visible.
--- Hidden cues drop the point so an exit cannot leave a stale target on screen.
+-- Builds the player sentence only while training presentation is visible.
+-- Hidden cues drop the text so an exit cannot leave a stale target on screen.
 function TrainingLoadouts.practiceCue(presentation: PresetPresentation, scene: PracticeScene): PracticeCue
 	if presentation.Visible ~= true then
-		return emptyPracticeCue()
+		return hiddenPracticeCue()
 	end
-	local marker = scene.Marker
+	local where = destinationClause(scene)
+	local count = countWord(scene.PassiveCount)
 	return table.freeze({
 		Visible = true,
-		MarkerName = scene.MarkerName,
-		MarkerX = marker.X,
-		MarkerY = marker.Y,
-		MarkerZ = marker.Z,
-		PassiveCount = scene.PassiveCount,
+		Text = `走進訓練場後，{where}，找會攻擊你的假人來練習格擋。出生區的{count}個假人不會攻擊，是被動目標。靠近後用左鍵攻擊，按住 F 格擋。`,
 	})
 end
 

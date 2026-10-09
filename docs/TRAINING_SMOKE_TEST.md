@@ -226,14 +226,17 @@ UI script that starts later reads the cached snapshot.
 
 While the selector is visible, Traditional Chinese lines say this is
 temporary training equipment, which preset is confirmed (or that none is
-confirmed yet), and a short next step. A separate line names
-`TrainingDummyMarker` and the X/Z from `TrainingSceneConfig.resolve`
-(not a second copy of the offset). It says that scene dummy is the
-attacker used for block practice, that the three birth-area dummies are
-passive targets, and to walk there, left-click to attack, and hold F to
-block. That line does not report damage or a successful block. An
-unidentified temporary weapon still shows the guidance and confirms no
-preset.
+confirmed yet), and a short next step. A separate line tells a new player
+where to walk in ordinary language. The place words come from
+`TrainingSceneConfig.resolve` by comparing `DummyMarker` with that same
+result's origin, entrance, and exit. The line does not print
+`TrainingDummyMarker`, any part name, or raw X/Z coordinates. For the
+current config it reads: 「走進訓練場後，到場地中央再往旁邊，找會攻擊你的假人來練習格擋。出生區的三個假人不會攻擊，是被動目標。靠近後用左鍵攻擊，按住 F 格擋。」
+It says that scene dummy is the attacker used for block practice, that
+the three birth-area dummies are passive targets, and to walk there,
+left-click to attack, and hold F to block. That line does not report
+damage or a successful block. An unidentified temporary weapon still
+shows the guidance and confirms no preset.
 
 The panel is placed on the left, just below the top coin/level HUD, and
 is wider and taller than the three buttons alone. Clearance from that
@@ -246,11 +249,12 @@ will suppress `MouseButton1`. This is not final art.
 
 Pure tests cover visibility, all three presets, a nil event passed
 explicitly, malformed events, a request that leaves the highlight
-unchanged, pointer-leave identity, three-way switching, the scene-marker
-cue and its exit clear, a subscriber that arrives after the event, and a
-listener error that does not skip the next listener. They do not create
-Instances and do not prove touch layout, hover pixels, or mouse sinking
-in Studio.
+unchanged, pointer-leave identity, three-way switching, the player-facing
+cue (no part name or raw coordinates, attacker versus passive targets,
+truthful attack and block instructions, exit clear), a subscriber that
+arrives after the event, and a listener error that does not skip the next
+listener. They do not create Instances and do not prove touch layout,
+hover pixels, or mouse sinking in Studio.
 
 ### Studio steps (NOT YET RUN)
 
@@ -301,11 +305,13 @@ record exists, every step below is **未執行**.
     click before the Loadout does not announce that the new preset is
     equipped.
 13. Passive versus attacking target: with the selector visible, read the
-    guidance. Expected; Studio not yet run: it names `TrainingDummyMarker`,
-    says that scene dummy attacks and is for block practice, says the
-    three birth-area dummies do not attack, and tells the player to walk
-    there, left-click to attack, and hold F to block. It does not say the
-    block or the hit already succeeded.
+    guidance. Expected; Studio not yet run: the line does not contain
+    `TrainingDummyMarker` or raw X/Z coordinates. It tells the player to
+    walk into the training ground, to the platform center and then aside,
+    and find the dummy that attacks them for block practice. It says the
+    three birth-area dummies do not attack, and to left-click to attack
+    and hold F to block. It does not say the block or the hit already
+    succeeded.
 14. Exit and reset: walk onto `TrainingExitPad`, then enter again and
     reset the character. Expected; Studio not yet run: both the exit and
     the reset hide the selector and clear the guidance. A later coin or
