@@ -6,6 +6,7 @@ trusted runner publishes only validated source/test changes, never merges.
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import difflib
 import json
@@ -54,7 +55,7 @@ def budget_exhausted(workspace):
     raise IncompleteDraft("Implementation budget exhausted; handoff incomplete; runtime unverified")
 
 
-def authorize(event):
+def authorize(event, marker=MARKER):
     repo_owner = require_env("GITHUB_REPOSITORY").split("/")[0]
     comment = event.get("comment", {})
     issue = event.get("issue", {})
@@ -64,7 +65,9 @@ def authorize(event):
             or comment.get("author_association") != "OWNER"):
         raise ValueError("Implementation requires a repository-owner issue comment")
     body = comment.get("body", "")
-    if not re.search(r"^\[IMPLEMENT:CLAUDE\]\s*$", body, re.M):
+    if ("[DIAGNOSTIC:CLAUDE]" in body and "[IMPLEMENT:CLAUDE]" in body):
+        raise ValueError("Diagnostic and implementation markers cannot be combined")
+    if not re.search(r"^" + re.escape(marker) + r"\s*$", body, re.M):
         raise ValueError("Missing exact implementation marker")
     base = re.findall(r"^Base: ([^\r\n]+)$", body, re.M)
     base = [value.strip() for value in base]
@@ -342,6 +345,100 @@ def publish(workspace, parent, tree_sha, issue, base, report, *, incomplete=Fals
     return pr["html_url"], commit["sha"]
 
 
+
+def diagnose_provider(*, live=False):
+    """Opt-in, one-request provider check; never publish or post comments.
+
+    Default is a network-free contract check. Live mode additionally requires
+    an owner-authored diagnostic marker and exact Expected-head on an existing
+    allowed base. It is not wired into any workflow by this proposal.
+    """
+    stage = "contract"
+    try:
+        if require_env("GITHUB_REPOSITORY") != "sammyzomb/Roblox-AI-Game":
+            raise ValueError("Diagnostic repository mismatch")
+        number, base, _spec, trigger = authorize(
+            load_event(), marker="[DIAGNOSTIC:CLAUDE]")
+        expected = [line.partition(":")[2].strip() for line in trigger.splitlines()
+                    if line.startswith("Expected-head:")]
+        if len(expected) != 1 or not re.fullmatch(r"[0-9a-f]{40}", expected[0]):
+            raise ValueError("Diagnostic requires one exact Expected-head")
+        if not live:
+            print("Diagnostic contract valid; offline only; provider NOT called.")
+            return 0
+        stage = "issue_lookup"
+        issue = github_get(f"/issues/{number}")
+        if issue.get("state") != "open" or "pull_request" in issue:
+            raise ValueError("Target must be an open issue")
+        stage = "head_lookup"
+        branch = github_get("/branches/" + quote(base, safe=""))
+        if branch.get("commit", {}).get("sha") != expected[0]:
+            raise ValueError("Diagnostic head changed; Technical Lead must re-inspect")
+        stage = "wif_exchange"
+        token = exchange_anthropic_token()
+        model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+        # No task/context/credentials are in the prompt, and no tools are offered.
+        # A successful response verifies this bounded request only, not file tools.
+        payload = {"model": model, "max_tokens": 128,
+                   "messages": [{"role": "user", "content": "Reply with OK only."}]}
+        if model == "claude-sonnet-5":
+            payload["thinking"] = {"type": "disabled"}
+        stage = "provider_request"
+        response = http_json(ANTHROPIC_API, method="POST", timeout=30,
+                             headers={"Authorization": "Bearer " + token,
+                                      "anthropic-version": "2023-06-01"},
+                             payload=payload)
+        stage = "provider_response"
+        # Never log provider text, raw bodies, identifiers or model metadata.
+        if (not isinstance(response, dict) or response.get("type") != "message"
+                or response.get("stop_reason") != "end_turn"
+                or response.get("content") != [{"type": "text", "text": "OK"}]):
+            raise ValueError("Diagnostic response did not match bounded success contract")
+        print("Provider check passed; no file tools, repository writes or gameplay tests ran.")
+        return 0
+    except Exception as exc:
+        # Stage and fields are fixed/allowlisted, never exception text or claims.
+        report = {"status": "blocked", "stage": stage}
+        endpoints = {"issue_lookup": r"https://api\.github\.com/[^\s:]+",
+                     "head_lookup": r"https://api\.github\.com/[^\s:]+",
+                     "wif_exchange": r"https://api\.anthropic\.com/v1/oauth/token",
+                     "provider_request": r"https://api\.anthropic\.com/v1/messages"}
+        if isinstance(exc, RuntimeError) and stage in endpoints:
+            match = re.match(r"HTTP ([1-5][0-9]{2}) calling " + endpoints[stage]
+                             + r":\s*", str(exc))
+            if match:
+                report["http_status"] = int(match[1])
+                if stage not in {"issue_lookup", "head_lookup"}:
+                    report["error_type"] = "unclassified_error"
+                    try:
+                        # Parse only the first JSON value. WIF adds OIDC claims
+                        # after it; those and the raw body must never be logged.
+                        body, _ = json.JSONDecoder().raw_decode(str(exc)[match.end():])
+                        error = body.get("error") if isinstance(body, dict) else None
+                        kind = error.get("type") if isinstance(error, dict) else None
+                        known = {"invalid_request_error", "authentication_error",
+                                 "permission_error", "not_found_error", "rate_limit_error",
+                                 "api_error", "overloaded_error"}
+                        if isinstance(kind, str) and kind in known:
+                            report["error_type"] = kind
+                    except (ValueError, TypeError):
+                        pass
+        print(json.dumps(report, sort_keys=True), file=sys.stderr)
+        return 1
+
+
+def cli(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--diagnostic", action="store_true",
+                        help="Validate owner diagnostic contract offline; no network by default")
+    parser.add_argument("--live-provider-check", action="store_true",
+                        help="With --diagnostic, explicitly permit one bounded provider request")
+    args = parser.parse_args(argv)
+    if args.live_provider_check and not args.diagnostic:
+        parser.error("--live-provider-check requires --diagnostic")
+    return diagnose_provider(live=args.live_provider_check) if args.diagnostic else main()
+
+
 def main():
     issue_number = None
     try:
@@ -441,4 +538,4 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli())
