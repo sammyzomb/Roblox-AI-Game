@@ -346,6 +346,40 @@ def publish(workspace, parent, tree_sha, issue, base, report, *, incomplete=Fals
 
 
 
+def authorize_diagnostic_dispatch(event, *, live):
+    """Validate a real manual workflow event; never fabricate an issue comment."""
+    owner = "sammyzomb"
+    repo = owner + "/Roblox-AI-Game"
+    if (os.getenv("GITHUB_REPOSITORY") != repo
+            or event.get("repository", {}).get("full_name") != repo
+            or event.get("sender", {}).get("login") != owner
+            or os.getenv("GITHUB_ACTOR") != owner
+            or os.getenv("GITHUB_TRIGGERING_ACTOR") != owner
+            or os.getenv("GITHUB_RUN_ATTEMPT") != "1"):
+        raise ValueError("Manual diagnostic identity or attempt mismatch")
+    inputs = event.get("inputs", {})
+    if not isinstance(inputs, dict) or inputs.get("agent") != "CLAUDE-DIAGNOSTIC":
+        raise ValueError("Manual diagnostic mode required")
+    requested_live = inputs.get("diagnostic_live", "false")
+    if requested_live not in ("false", "true") or (live and requested_live != "true"):
+        raise ValueError("Explicit manual live gate required")
+    number = inputs.get("issue_number", "")
+    base = inputs.get("diagnostic_base", "")
+    expected = inputs.get("diagnostic_expected_head", "")
+    spec = inputs.get("diagnostic_spec_commit", "")
+    code_sha = inputs.get("diagnostic_runner_sha", "")
+    if (not isinstance(number, str) or not re.fullmatch(r"[1-9][0-9]{0,9}", number)
+            or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value)
+                   for value in (expected, spec, code_sha))
+            or code_sha != os.getenv("GITHUB_SHA")):
+        raise ValueError("Manual diagnostic pinned inputs invalid")
+    if (not isinstance(base, str) or (base not in ("main", "claude-dev")
+            and not re.fullmatch(r"claude/issue-" + number + r"/run-[0-9]+-[0-9]+", base))):
+        raise ValueError("Manual diagnostic base outside existing allowlist")
+    trigger = f"Expected-head: {expected}"
+    return int(number), base, spec, trigger
+
+
 def diagnose_provider(*, live=False):
     """Opt-in, one-request provider check; never publish or post comments.
 
@@ -357,8 +391,11 @@ def diagnose_provider(*, live=False):
     try:
         if require_env("GITHUB_REPOSITORY") != "sammyzomb/Roblox-AI-Game":
             raise ValueError("Diagnostic repository mismatch")
-        number, base, _spec, trigger = authorize(
-            load_event(), marker="[DIAGNOSTIC:CLAUDE]")
+        event = load_event()
+        if os.getenv("EVENT_NAME") == "workflow_dispatch":
+            number, base, _spec, trigger = authorize_diagnostic_dispatch(event, live=live)
+        else:
+            number, base, _spec, trigger = authorize(event, marker="[DIAGNOSTIC:CLAUDE]")
         expected = [line.partition(":")[2].strip() for line in trigger.splitlines()
                     if line.startswith("Expected-head:")]
         if len(expected) != 1 or not re.fullmatch(r"[0-9a-f]{40}", expected[0]):
@@ -376,7 +413,7 @@ def diagnose_provider(*, live=False):
             raise ValueError("Diagnostic head changed; Technical Lead must re-inspect")
         stage = "wif_exchange"
         token = exchange_anthropic_token()
-        model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+        model = "claude-sonnet-5"  # fixed diagnostic model and published price tier
         # No task/context/credentials are in the prompt, and no tools are offered.
         # A successful response verifies this bounded request only, not file tools.
         payload = {"model": model, "max_tokens": 128,
