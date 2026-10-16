@@ -4,7 +4,9 @@ import copy
 import io
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -27,6 +29,32 @@ def manual(live='false'):
                        'diagnostic_runner_sha': CODE}}
 
 class ManualDiagnosticTests(unittest.TestCase):
+    def test_real_cli_reads_runner_event_file_without_custom_path(self):
+        # Regression for Actions run 38888230103: job-level EVENT_PATH was
+        # empty. Exercise the real loader/CLI rather than mocking load_event.
+        with tempfile.TemporaryDirectory() as directory:
+            event_path = Path(directory) / 'event.json'
+            event_path.write_text(json.dumps(manual()), encoding='utf-8')
+            for override in (None, ''):
+                environment = {**ENV, 'GITHUB_EVENT_PATH': str(event_path)}
+                if override is not None:
+                    environment['EVENT_PATH'] = override
+                result = subprocess.run(
+                    [sys.executable, str(Path(runner.__file__)), '--diagnostic'],
+                    env=environment, text=True, capture_output=True, check=False)
+                with self.subTest(override=override):
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('offline only; provider NOT called', result.stdout)
+
+    def test_event_file_explicit_override_remains_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event_path = Path(directory) / 'event.json'
+            fixture = manual()
+            event_path.write_text(json.dumps(fixture), encoding='utf-8')
+            with patch.dict(os.environ, {'EVENT_PATH': str(event_path),
+                                         'GITHUB_EVENT_PATH': '/not-the-event.json'}):
+                self.assertEqual(runner.load_event(), fixture)
+
     def call(self, event=None, live=False, environment=None, head=SHA):
         output = io.StringIO()
         def get(path):
@@ -137,3 +165,4 @@ class ManualDiagnosticTests(unittest.TestCase):
         self.assertNotIn('pull_request:',text); self.assertNotIn('push:',text)
 
 if __name__ == '__main__': unittest.main()
+
