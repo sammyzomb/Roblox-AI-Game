@@ -118,7 +118,10 @@ def github_headers() -> dict[str, str]:
 
 
 def load_event() -> dict[str, Any]:
-    path = require_env("EVENT_PATH")
+    # GITHUB_EVENT_PATH is provided by the runner. A job-level event_path
+    # context can resolve empty before a runner is assigned; retain an explicit
+    # EVENT_PATH override for local invocations and older step-level workflows.
+    path = os.getenv("EVENT_PATH") or require_env("GITHUB_EVENT_PATH")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -499,3 +502,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
