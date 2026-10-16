@@ -747,10 +747,18 @@ local function onEquip(entry: Entry, player: Player, slot: string, itemId: strin
 	if c.Pending or c.Blocking then
 		return reject(entry, "Busy")
 	end
+	-- Resolve the profile once, before any mutation. A nil profile (data not
+	-- loaded/available for this player) must never reach equipWeapon/
+	-- equipArmor/unequip or the PlayerData Update below: those core
+	-- progression checks and the persisted loadout must not be bypassed or
+	-- written to while there is no profile to validate against.
+	local profile = playerData:GetProfile(player)
+	if profile == nil then
+		return reject(entry, "NoData")
+	end
 	if itemId == false then
 		engine:unequip(c, slot :: Types.Slot)
 	else
-		local profile = playerData:GetProfile(player)
 		local ok, why
 		if HAND_SLOTS[slot] then
 			local def = defs.Weapons[itemId]

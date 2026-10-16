@@ -1,5 +1,88 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Fifth pass (CLAUDE-HARDENING-NODATA-001: #20 readiness guard, onEquip NoData)
+
+Bounded hardening pass, unrelated to the training-ground feature scope above:
+`src/ServerScriptService/Services/CombatService.luau`'s `onEquip` now resolves
+`playerData:GetProfile(player)` exactly once, immediately after the existing
+slot-validity / training / Busy checks and before any mutation. If that
+profile is `nil`, the request is rejected with the existing `reject(entry,
+"NoData")` helper and the function returns immediately: `engine:unequip`,
+`engine:equipWeapon`, `engine:equipArmor`, and `playerData:Update` are all
+unreached in that case, so a nil profile can no longer bypass progression
+gate checks (which previously received a possibly-nil profile directly) and
+can never mutate the live combatant's loadout or the persisted
+`PlayerDataService` loadout. When the profile is non-nil, behavior is
+unchanged: the same profile instance is now reused for the existing
+`equipWeapon`/`equipArmor` calls (previously fetched at the same spot, just
+after instead of before the `itemId == false` branch), and all existing
+`WrongSlot`/`Busy`/training-rejection semantics, the public API, training
+isolation, and the authoritative combat core are untouched. No new remote,
+no new abstraction, no ownership/movement/economy/scene/UI change.
+
+### Scope
+
+Implements ONLY item 1-3 of task `CLAUDE-HARDENING-NODATA-001`:
+nil-profile guard in `onEquip` before any equip/unequip/persist mutation,
+reusing the resolved profile for the existing equip calls. This is one of
+several required #20 readiness guards; it does not complete #20, does not
+touch `onUseItem` (which has its own, separate `playerData:Get` nil check
+already in place and was left unmodified per the assignment's allowed-file
+and minimal-diff scope), and does not release public PvP.
+
+### Test harness limitation (reported, not worked around)
+
+This runner has no shell, Luau CLI, Rojo, or Studio access in this session.
+`tests/combat_spec.luau` (the only existing behavioral test file that
+exercises `CombatCore`/`Definitions`/etc.) calls the pure `CombatCore`
+engine directly (`engine:equipWeapon(c, id, profile)`); it does not
+construct a `CombatService` `Entry`/`Player`/`PlayerDataService` instance,
+because `CombatService.onEquip` is Roblox-service-shaped (it needs a real or
+mocked `Player`, `PlayerDataService:Get/GetProfile/Update`, and
+`CombatEvent` remote) and no such mock harness exists in `tests/` today.
+Building one just to assert a nil check, per the assignment, would be a new
+abstraction introduced solely for this test and was explicitly avoided.
+Consequently **no automated regression test was added for this change**;
+the scenarios below are listed as Studio/manual smoke steps only and are
+marked NOT RUN, not claimed as passing.
+
+### NoData scenarios (NOT RUN — requires Studio; no Studio/shell/Luau access this session)
+
+1. **Nil profile, weapon equip.** Force `PlayerDataService:GetProfile(player)`
+   to return `nil` for a connected player with a live combatant (e.g. a
+   player whose data has not finished loading, or a temporarily-detached
+   test double in a future harness), then send
+   `{ Action = "Equip", Slot = "MainHand", ItemId = "<any owned weapon id>" }`.
+   Expected: `CombatEvent` `Rejected` with `Reason = "NoData"`; the
+   combatant's `Loadout.MainHand` is unchanged; `PlayerDataService`'s stored
+   `Loadout` is unchanged; no `Update` write occurs.
+2. **Nil profile, armor equip.** Same as (1) but `Slot` is an armor slot and
+   `ItemId` is a valid armor id. Expected: same `NoData` rejection, no
+   mutation of the live combatant's armor list or persisted `Loadout`.
+3. **Nil profile, unequip.** Same precondition, `ItemId = false` for a slot
+   that currently holds an item. Expected: `NoData` rejection; the
+   previously-equipped item remains equipped on both the live combatant and
+   the persisted `Loadout` (i.e. `engine:unequip` must NOT run either).
+4. **Valid profile, unchanged behavior (regression check).** With a normal
+   loaded profile, repeat a weapon equip, an armor equip, and an unequip that
+   previously worked. Expected: identical behavior to before this change
+   (`WrongSlot`/`Busy`/training rejections still fire under their existing
+   conditions; successful equips still update both the live combatant and
+   the persisted `Loadout` exactly as before).
+
+Status: all four scenarios above are **NOT RUN**. No shell/Luau/Rojo/Studio
+tool was available in this session; this is the reproducible operation
+sheet required by the task, not evidence of a passed test.
+
+### Files touched (fifth pass)
+
+- `src/ServerScriptService/Services/CombatService.luau` (`onEquip`: resolve
+  profile once before mutation, reject `NoData` on nil, reuse resolved
+  profile for existing equip calls)
+- `docs/TRAINING_SMOKE_TEST.md` (this section)
+
+No other files were touched for this pass.
+
 ## Fourth pass (this assignment: fix-training-scene-reachability-ensure-dummy)
 
 Bounded correctness pass on top of the third pass below, per Technical
