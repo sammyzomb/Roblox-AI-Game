@@ -10,8 +10,31 @@ on:
         required: true
         type: string
       agent:
-        description: "Agent key: CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-ANIMATION-DESIGNER, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
+        description: "Agent key: CLAUDE-DIAGNOSTIC (manual offline check), CLAUDE, GROK, GROK-ART-PLANNER, GROK-ART-SUPERVISOR, GROK-ANIMATION-DESIGNER, GROK-SFX-PLANNER, GROK-MUSIC-PLANNER"
         required: true
+        type: string
+
+      diagnostic_live:
+        description: "Diagnostic only: explicit approval for one bounded live request; keep false for offline"
+        required: false
+        default: false
+        type: boolean
+      diagnostic_base:
+        description: "Diagnostic only: existing allowed base branch"
+        required: false
+        default: "claude-dev"
+        type: string
+      diagnostic_expected_head:
+        description: "Diagnostic only: exact 40-character base SHA approved for this check"
+        required: false
+        type: string
+      diagnostic_spec_commit:
+        description: "Diagnostic only: exact approved scope commit SHA"
+        required: false
+        type: string
+      diagnostic_runner_sha:
+        description: "Diagnostic only: exact reviewed runner/workflow SHA, must equal selected ref SHA"
+        required: false
         type: string
 
 permissions:
@@ -26,7 +49,8 @@ concurrency:
 jobs:
   dispatch:
     if: >
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.agent != 'CLAUDE-DIAGNOSTIC' && !inputs.diagnostic_live) ||
       (
         github.event_name == 'issue_comment' &&
         github.event.comment.user.login != 'github-actions[bot]' &&
@@ -110,3 +134,94 @@ jobs:
           ANTHROPIC_WORKSPACE_ID: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
         run: python3 scripts/claude_implementer.py
+
+  diagnose:
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      inputs.agent == 'CLAUDE-DIAGNOSTIC' &&
+      github.repository == 'sammyzomb/Roblox-AI-Game' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      github.run_attempt == 1 &&
+      inputs.diagnostic_runner_sha == github.sha
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+      GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+      GITHUB_SHA: ${{ github.sha }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - name: Checkout exact reviewed diagnostic code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify offline diagnostic contract and regression tests
+        run: |
+          python3 scripts/claude_implementer.py --diagnostic
+          python3 -m unittest discover -s tests -p 'test_claude*.py' -v
+
+
+  diagnose_live:
+    needs: diagnose
+    if: >
+      inputs.diagnostic_live &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.agent == 'CLAUDE-DIAGNOSTIC' &&
+      github.repository == 'sammyzomb/Roblox-AI-Game' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      github.run_attempt == 1 &&
+      inputs.diagnostic_runner_sha == github.sha
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+      GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+      GITHUB_SHA: ${{ github.sha }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - name: Checkout same exact reviewed code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Revalidate manual contract before token request
+        run: python3 scripts/claude_implementer.py --diagnostic
+
+      - name: Explicitly approved live diagnostic only
+        if: ${{ inputs.diagnostic_live }}
+        env:
+          ANTHROPIC_FEDERATION_RULE_ID: fdrl_01AcTwt2NFyUCaGMRxmFrQAG
+          ANTHROPIC_ORGANIZATION_ID: 21c12f48-e933-49ca-b5bb-e6b84f901e5e
+          ANTHROPIC_SERVICE_ACCOUNT_ID: svac_01FtmSsticj8DHNRbayjucWv
+          ANTHROPIC_WORKSPACE_ID: wrkspc_01NFsV9KnGs9EYjeQh2GrSPJ
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          identity_file=$(mktemp)
+          trap 'rm -f "$identity_file"' EXIT
+          if ! curl --fail --silent \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" \
+            | jq -er .value > "$identity_file"; then
+            echo '{"status":"blocked","stage":"github_oidc"}' >&2
+            exit 1
+          fi
+          export ANTHROPIC_IDENTITY_TOKEN_FILE="$identity_file"
+          python3 scripts/claude_implementer.py --diagnostic --live-provider-check
+
