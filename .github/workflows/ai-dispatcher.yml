@@ -155,7 +155,6 @@ jobs:
       GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
       GITHUB_SHA: ${{ github.sha }}
       EVENT_NAME: ${{ github.event_name }}
-      EVENT_PATH: ${{ github.event_path }}
     steps:
       - name: Checkout exact reviewed diagnostic code
         uses: actions/checkout@v4
@@ -193,7 +192,6 @@ jobs:
       GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
       GITHUB_SHA: ${{ github.sha }}
       EVENT_NAME: ${{ github.event_name }}
-      EVENT_PATH: ${{ github.event_path }}
     steps:
       - name: Checkout same exact reviewed code
         uses: actions/checkout@v4
@@ -226,3 +224,4 @@ jobs:
           fi
           export ANTHROPIC_IDENTITY_TOKEN_FILE="$identity_file"
           python3 scripts/claude_implementer.py --diagnostic --live-provider-check
+
