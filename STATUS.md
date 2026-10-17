@@ -12,11 +12,11 @@
 - **Grok：** 獨立審查與創意規劃（美術、動畫、音效、音樂），意見交給 Claude Code 評估。
 - **Product Owner：** 在 Roblox Studio 實測、決定驗收標準與優先順序，同意合併到 `main`。
 
-角色文件已同步更新：`README.md`、`docs/AI_RULES.md`、`docs/TEAM_ROLES.md`、`docs/TASKS.md`、`docs/AI_COORDINATION_PROTOCOL.md`、`docs/CREATIVE_TEAM.md`、`docs/ARCHITECTURE.md`。舊的進度摘要 `docs/PROJECT_STATUS.md` 已刪除，進度一律以本檔案為準。自動化工具說明（`docs/CLAUDE_AUTOMATION.md`、`docs/AI_DISPATCHER.md`、`docs/CLAUDE_DIAGNOSTIC_PROPOSAL.md`）仍描述舊的 Technical Lead 派工流程，尚未修改。
+角色文件已同步更新：`README.md`、`docs/AI_RULES.md`、`docs/TEAM_ROLES.md`、`docs/TASKS.md`、`docs/AI_COORDINATION_PROTOCOL.md`、`docs/CREATIVE_TEAM.md`、`docs/ARCHITECTURE.md`。舊的進度摘要 `docs/PROJECT_STATUS.md` 已刪除，進度一律以本檔案為準。`scripts/ai_dispatcher.py` 給 Grok 的指示已改成新分工。自動派工 Claude 的流程（`scripts/claude_implementer.py`）及其說明文件（`docs/CLAUDE_AUTOMATION.md`、`docs/AI_DISPATCHER.md`、`docs/CLAUDE_DIAGNOSTIC_PROPOSAL.md`）仍寫著交給 Technical Lead，尚未修改。
 
 ## 目前候選分支
 
-`candidate/v1`，從 `main`（`116c3b0`）建立。2026-10-17 經 Product Owner 同意，透過 Pull Request 合併到 `main`。合併了：
+`candidate/v1`，從 `main`（`116c3b0`）建立。2026-10-17 經 Product Owner 同意，透過 PR #56 合併到 `main`。合併了：
 
 | 來源 | head | 內容 |
 |---|---|---|

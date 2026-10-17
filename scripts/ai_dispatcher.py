@@ -228,9 +228,11 @@ Core project governance/context:
 
 PROJECT EXECUTION RULES:
 - GitHub is the source of truth.
-- ChatGPT is Technical Lead / Primary Coordinator.
-- Claude is the default owner of production code.
-- Cursor is not a dependency.
+- The Product Owner (sammyzomb) decides direction and priorities, runs Studio tests, and approves merges into main.
+- Claude Code is the primary developer: it owns all production code and integrates work into the candidate branch named in STATUS.md.
+- ChatGPT is an advisor/reviewer only: its feedback is advisory and it does not assign tasks, gate work, or decide merges.
+- Cursor only does read-only checks on the candidate branch; it is not a dependency.
+- Send review findings and recommendations to Claude Code; disagreements go to the Product Owner.
 - Do not modify main directly.
 - Do not pretend you committed, pushed, opened a PR, tested in Studio, or changed files unless the context proves it.
 - This dispatcher v1 is READ-ONLY. You cannot mutate repository files.
