@@ -55,7 +55,7 @@ Boundaries:
 - Does not redefine gameplay rules or combat balance.
 - Does not replace Art Planner's overall visual direction.
 - Does not own production gameplay code.
-- Raises cross-discipline conflicts to ChatGPT Technical Lead.
+- Raises cross-discipline conflicts to Claude Code, which brings decisions to the Product Owner.
 
 ### Sound Effects Planner
 Primary responsibility:
@@ -92,6 +92,6 @@ Deliverables:
 - Each bot must identify its role in Issue #3 when checking in.
 - Each role works through its own GitHub Issue.
 - Do not overwrite engineering architecture or gameplay rules.
-- Any art/audio decision affecting gameplay clarity or performance must be raised to ChatGPT.
-- ChatGPT remains Technical Lead and project-wide coordinator.
+- Any art/audio decision affecting gameplay clarity or performance must be raised to Claude Code, which brings it to the Product Owner.
+- Claude Code is the primary developer and integrates creative deliverables into the game; ChatGPT is an advisor/reviewer.
 - Product Owner remains sammyzomb.

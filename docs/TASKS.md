@@ -2,51 +2,39 @@
 
 ## Project Command Structure
 
-Technical Lead / Coordinator: **ChatGPT**
-Product Owner: **sammyzomb**
+Product Owner: **sammyzomb** (direction, priorities, Studio acceptance, merges into `main`)
+Primary Developer: **Claude Code**
+Advisor / Reviewer: **ChatGPT** (advisory only)
 
 All contributors must:
-1. Read `README.md`
-2. Read `docs/AI_RULES.md`
-3. Read `docs/ARCHITECTURE.md`
-4. Work only on assigned branch
-5. Submit Pull Requests into `main`
-6. Do not modify `main` directly
+1. Read `STATUS.md`
+2. Read `README.md`
+3. Read `docs/AI_RULES.md`
+4. Read `docs/ARCHITECTURE.md`
+5. Do not modify `main` directly; merging into `main` needs Product Owner approval
 
 ## Current Development Roles
 
-### Claude — Primary Programmer
-Branch: `claude-dev`
+### Claude Code — Primary Developer
+Branch: the current candidate branch in `STATUS.md` (now `candidate/v1`), or task branches integrated into it.
 
 Primary responsibilities:
 - Implement core Roblox / Luau systems and major gameplay features.
 - Own primary implementations for combat, progression, player data, NPCs, training systems, weapons, skills, UI glue, and other assigned core systems.
 - Keep implementations data-driven and server-authoritative where applicable.
 - Add or update tests and implementation documentation.
-- Do not start a second implementation of work already assigned to Cursor or Grok Bot unless ChatGPT explicitly reassigns it.
+- Integrate work into the candidate branch and keep `STATUS.md` current.
+- Evaluate advisory feedback and bring decisions to the Product Owner.
 
-Current priority:
-- Finish and stabilize the core work represented by PR #4.
-- Resolve integration issues required before Roblox Studio play-testing.
-- Avoid broad new feature expansion until the current core is integration-ready.
+Current priority: see "下一步" in `STATUS.md`.
 
-### Cursor — Secondary Developer / Verification Engineer
-Branch: task-specific `cursor/*` branches unless ChatGPT assigns another branch.
+### Cursor — Secondary Developer (read-only checks)
+Branch: none of its own. Reads the candidate branch named in `STATUS.md`.
 
 Primary responsibilities:
-- Read and verify Claude's implementation before integration.
-- Run fresh-agent smoke tests, regression tests, build checks, and pre-Studio verification.
-- Identify reproducible bugs, merge conflicts, missing tests, unsafe assumptions, and integration risks.
-- Make small, isolated, test-backed fixes when assigned.
-- Review differences among `main`, `claude-dev`, and active PR heads.
-- Prepare Studio test checklists and flag blockers before Product Owner play-testing.
-- Do not independently rewrite Claude-owned core systems unless ChatGPT explicitly assigns that work.
-
-Current priority:
-- Verify PR #4 and its relationship to current `main`.
-- Identify merge/integration blockers.
-- Validate automated tests and Studio prerequisites.
-- Continue acting as the main regression/smoke-test developer.
+- Read and check the candidate branch: run tests and builds, look for reproducible bugs, missing tests, and integration risks.
+- Report findings to Claude Code through an Issue or PR comment.
+- Do not modify code, create branches, open code PRs, or merge.
 
 ### Grok Bot — Independent Reviewer / Prototype Developer
 Branch: `grok-dev`
@@ -56,7 +44,7 @@ Primary responsibilities:
 - Review Claude and Cursor changes from a separate perspective.
 - Propose isolated prototypes or alternative designs only when requested.
 - Record disagreements as review findings or `[CONFLICT]` items instead of silently creating a competing core implementation.
-- Do not duplicate Claude or Cursor work unless ChatGPT explicitly requests parallel exploration.
+- Do not duplicate Claude Code work unless the Product Owner approves parallel exploration.
 
 Current priority:
 - Review combat balance and exploit surface.
@@ -97,33 +85,29 @@ Primary responsibilities:
 - Maintain `docs/MUSIC_PLAN.md`.
 - Does not own production gameplay code.
 
-Creative roles may be separate Grok bots. They report through GitHub and escalate gameplay/performance conflicts to ChatGPT.
+Creative roles may be separate Grok bots. They report through GitHub and raise gameplay/performance conflicts to Claude Code, which brings decisions to the Product Owner.
 
-### ChatGPT — Technical Lead
-Branch: `chatgpt-dev` or task-specific `chatgpt/*` branches.
+### ChatGPT — Advisor / Reviewer
+Branch: none required. Optional `chatgpt/*` branches for document drafts, evaluated by Claude Code.
 
 Primary responsibilities:
-- Break down work and assign each task to exactly one primary owner.
-- Review Claude, Cursor, and Grok Bot results.
-- Prevent duplicate implementations and cross-branch conflicts.
-- Resolve integration problems and maintain architecture/governance documents.
-- Decide merge readiness based on evidence.
-- Distinguish document complete, code complete, integrated, Studio-tested, and truly playable states.
-- Escalate product-direction decisions to the Product Owner.
+- Discuss gameplay, architecture, and plans when asked.
+- Review plans and PRs and point out risks.
+- Feedback is advisory: ChatGPT does not assign tasks, gate work, or decide merge readiness.
 
 ## Default Delivery Flow
 
-1. **Claude implements** the primary feature or core-system change.
-2. **Cursor verifies** the implementation, runs smoke/regression/build checks, and fixes only scoped issues assigned by ChatGPT.
-3. **Grok Bot independently reviews** architecture, balance, security, exploit surface, or creates an isolated prototype when needed.
-4. **ChatGPT integrates and reviews** the combined result and resolves conflicts.
-5. **Product Owner / Roblox Studio acceptance** confirms the feature actually works in Studio before it is called truly playable.
+1. **Product Owner** decides what to build and in what order.
+2. **Claude Code implements**, tests, integrates into the candidate branch, and updates `STATUS.md`.
+3. **Cursor checks** the candidate branch read-only and reports findings.
+4. **ChatGPT and Grok Bot** give advisory reviews when useful.
+5. **Product Owner / Roblox Studio acceptance** confirms the feature actually works in Studio before it is called truly playable, and approves any merge into `main`.
 
 ## Coordination Rules
 
-- Claude, Cursor, and Grok Bot must not duplicate the same implementation unless ChatGPT explicitly assigns parallel exploration.
+- No agent duplicates Claude Code's implementation unless the Product Owner approves parallel exploration.
 - No contributor modifies `main` directly.
 - All substantive changes go through Pull Requests.
 - PRs must state purpose, changes, tests, risks, and dependencies.
 - A passing unit test does not equal Roblox Studio acceptance.
-- GitHub is the system of record for assignments, decisions, evidence, and handoffs.
+- `STATUS.md` and GitHub are the system of record for progress, decisions, evidence, and handoffs.

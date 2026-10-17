@@ -26,7 +26,7 @@ If there is no blocker, write `Blocked by: None`.
 
 Before implementation, each AI must confirm:
 1. What the Product Owner wants.
-2. What the Technical Lead has assigned.
+2. What `STATUS.md` lists as the current task and next steps.
 3. Which files/modules it owns.
 4. Which files/modules it must not modify.
 5. What other AI work it depends on.
@@ -112,14 +112,17 @@ Recommended next step:
 ## Authority
 
 - Product Owner: sammyzomb
-- Technical Lead / Primary Coordinator: ChatGPT
-- Primary Programmer: Claude
-- Secondary Developer / Reviewer: Grok
+- Primary Developer: Claude Code
+- Secondary Developer (read-only checks): Cursor
+- Advisor / Reviewer: ChatGPT (advisory only)
+- Independent Reviewer: Grok
 
 When requirements conflict:
 1. Product Owner intent has highest priority.
-2. ChatGPT coordinates technical resolution.
-3. Claude and Grok must surface disagreements in GitHub instead of silently choosing different approaches.
+2. Claude Code proposes a technical resolution with options and a recommendation; the Product Owner decides.
+3. Advisors and reviewers surface disagreements in GitHub instead of silently choosing different approaches.
+
+`STATUS.md` in the repository root is the current progress record and is read before any work starts.
 
 ## Main Rule
 

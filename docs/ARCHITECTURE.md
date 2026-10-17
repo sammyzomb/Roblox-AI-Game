@@ -6,9 +6,10 @@ Build a Roblox game that can be designed and iterated primarily through GitHub-b
 
 ## Repository Roles
 
-- `main`: stable integration branch
-- `chatgpt-dev`: architecture, integration, orchestration
-- `claude-dev`: primary implementation
+- `main`: stable branch; merges need Product Owner approval
+- `candidate/*`: current integration candidate (see `STATUS.md`), maintained by Claude Code
+- `claude-dev`: primary implementation (historical; new work goes through the candidate branch)
+- `chatgpt-dev`: advisory document drafts
 - `grok-dev`: secondary implementation, prototypes, review
 
 ## Initial Source Layout

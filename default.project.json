@@ -1,0 +1,53 @@
+{
+  "name": "Roblox-AI-Game",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$path": "src/ReplicatedStorage"
+    },
+
+    "ServerScriptService": {
+      "$path": "src/ServerScriptService"
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$path": "src/StarterPlayer/StarterPlayerScripts"
+      }
+    },
+
+    "StarterGui": {
+      "$path": "src/StarterGui",
+      "$properties": {
+        "ResetPlayerGuiOnSpawn": false
+      }
+    },
+
+    "Workspace": {
+      "$className": "Workspace",
+      "$ignoreUnknownInstances": true,
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Size": [512, 16, 512],
+          "Position": [0, -8, 0],
+          "Material": "Grass",
+          "Color": [0.36, 0.6, 0.3]
+        }
+      },
+      "SpawnLocation": {
+        "$className": "SpawnLocation",
+        "$properties": {
+          "Anchored": true,
+          "Size": [12, 1, 12],
+          "Position": [0, 0.5, 0],
+          "Duration": 0
+        }
+      }
+    }
+  }
+}
