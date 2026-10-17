@@ -10,6 +10,7 @@
 
 - Claude Code 是主開發，負責程式修改與合併到候選分支（目前是 `candidate/v1`）。
 - Cursor 是第二開發，只在候選分支上做唯讀檢查，不修改、不合併。
+- ChatGPT 是顧問／審查，意見僅供參考：評估後採用，或在 PR／`STATUS.md` 記錄不採用的原因；有分歧時交 Product Owner 決定。不需要等 ChatGPT 同意才能繼續工作。
 - 合併到 `main`、關閉 PR、發布遊戲都要先問 Product Owner。
 - 不要 force-push 別人的分支，也不要改寫已推送的歷史。
 

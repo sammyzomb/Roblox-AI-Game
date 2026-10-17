@@ -4,21 +4,23 @@
 **sammyzomb**
 - Defines product direction and priorities.
 - Makes final decisions on major scope, theme, monetization, and player-facing behavior.
+- Approves merges into `main`, releases, and closing PRs.
+- Runs Roblox Studio tests and gives final acceptance.
 
-## ChatGPT — Technical Lead / Primary Coordinator
-- Single coordination point for the whole project.
-- Converts Product Owner decisions into GitHub tasks.
-- Maintains architecture, task ownership, integration rules, and cross-agent dependencies.
-- Reviews PRs and resolves conflicts.
-- Consolidates progress, blockers, and decisions.
-- Escalates only decisions that require Product Owner input.
+## Claude Code — Primary Developer
+**Claude Code is the primary and authoritative implementation agent for production code.** (Product Owner decision, 2026-10-17.)
+- Owns all code changes: core systems, gameplay, data, networking, UI logic, combat, and refactors.
+- Integrates work into the current candidate branch (see `STATUS.md`).
+- Maintains architecture documents and `STATUS.md`.
+- Evaluates advisory feedback from ChatGPT and Grok; adopts it or records why not.
+- Brings conflicts and product decisions to the Product Owner with options and a recommendation.
+- Other agents may review or prototype, but must not create competing production implementations unless the Product Owner approves.
 
-## Claude — Primary Programmer
-**Claude is the primary and authoritative implementation agent for production code.**
-- Owns primary Luau implementation.
-- Owns core systems, gameplay systems, data systems, networking implementation, UI logic implementation, combat implementation, and technical refactors.
-- Produces production-ready code through `claude-dev` and Pull Requests.
-- Other agents may review or prototype, but should not create competing production implementations unless explicitly assigned by ChatGPT.
+## ChatGPT — Advisor / Reviewer
+- Gives design, architecture, and gameplay opinions when asked.
+- Reviews plans and PRs and points out risks.
+- Its feedback is advisory: it does not assign tasks, gate work, or decide merge readiness.
+- Posts feedback as Issue or PR comments. Disagreements go to the Product Owner.
 
 ## Grok — Secondary Developer / Reviewer
 - Reviews architecture and code.
@@ -26,6 +28,7 @@
 - May implement isolated prototypes only when explicitly assigned.
 - Must not assume ownership of Claude's production modules.
 - Must not assign implementation work to Cursor or any external agent.
+- Review feedback is advisory and goes to Claude Code; disagreements go to the Product Owner.
 
 ## Creative Grok Roles
 ### Art Planner
@@ -47,19 +50,14 @@
 
 Creative roles do not own gameplay code.
 
-## Cursor — Secondary Developer / Verification Engineer
-**Cursor is now an active project role under ChatGPT coordination.**
-
-Current policy:
-- Cursor verifies Claude implementation through fresh-agent smoke tests, regression/build checks, integration checks, and Studio prerequisites.
-- Cursor may make small, isolated, test-backed fixes when explicitly assigned by ChatGPT.
-- Cursor must not independently rewrite Claude-owned core production systems.
-- Cursor does not replace Claude as Primary Programmer.
-- Work must use assigned task-specific branches and Pull Requests.
-- ChatGPT remains responsible for task ownership, conflict resolution, and merge readiness.
+## Cursor — Secondary Developer (read-only checks)
+Current policy (Product Owner decision, 2026-10-17):
+- Cursor performs read-only checks on the assigned candidate branch: reads code, runs tests and builds, and reports reproducible problems.
+- Cursor does not modify code, create branches, open code PRs, or merge.
+- Findings go to Claude Code (Issue or PR comment), which fixes them on the candidate branch.
 
 ## Source of Truth
 GitHub is the project source of truth.
 
 Standard flow:
-Product Owner -> ChatGPT -> GitHub task -> Assigned AI -> GitHub report/PR -> ChatGPT integration -> Product Owner only when a decision is needed.
+Product Owner -> Claude Code (implement, test, integrate into candidate branch, update `STATUS.md`) -> Cursor read-only check / advisory reviews -> Product Owner Studio test and decision.

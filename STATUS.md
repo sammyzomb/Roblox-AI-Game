@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-10-17（Claude Code）
+最後更新：2026-10-17（Claude Code，更新角色分工文件）
 
 ## 開發分工
 
@@ -8,7 +8,11 @@
 
 - **Claude Code：主開發。** 負責所有程式修改與分支合併。合併到 `main`、關閉 PR、發布遊戲都要先經 Product Owner 同意。
 - **Cursor：第二開發。** 只在指定的候選分支上做唯讀檢查（讀程式碼、跑測試、回報問題），不直接修改或合併。
-- **Product Owner：** 在 Roblox Studio 實測、決定驗收標準與優先順序。
+- **ChatGPT：顧問／審查。** 提供玩法、架構與 PR 審查意見，僅供參考；不派工、不把關、不決定能否合併。有分歧時交 Product Owner 決定。
+- **Grok：** 獨立審查與創意規劃（美術、動畫、音效、音樂），意見交給 Claude Code 評估。
+- **Product Owner：** 在 Roblox Studio 實測、決定驗收標準與優先順序，同意合併到 `main`。
+
+角色文件已同步更新：`README.md`、`docs/AI_RULES.md`、`docs/TEAM_ROLES.md`、`docs/TASKS.md`、`docs/AI_COORDINATION_PROTOCOL.md`、`docs/CREATIVE_TEAM.md`、`docs/ARCHITECTURE.md`。`docs/PROJECT_STATUS.md` 已停用，改指向本檔案。自動化工具說明（`docs/CLAUDE_AUTOMATION.md`、`docs/AI_DISPATCHER.md`、`docs/CLAUDE_DIAGNOSTIC_PROPOSAL.md`）仍描述舊的 Technical Lead 派工流程，尚未修改。
 
 ## 目前候選分支
 
@@ -81,8 +85,9 @@
 
 ## 下一步
 
-1. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
-2. Product Owner 補上「驗收標準」段落。
-3. Cursor 對 `candidate/v1` 做唯讀檢查並回報。
-4. 依實測結果，由 Claude Code 在 `candidate/v1` 上修正問題。
-5. 之後依優先順序：P1b 最低視覺／UI 品質 → 音效、音樂、動畫整合 → 結算與重試流程 → 手機版面。
+1. 在 Issue #3 通知 ChatGPT、Cursor、Grok 新的分工（尚未發出）。
+2. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
+3. Product Owner 補上「驗收標準」段落。
+4. Cursor 對 `candidate/v1` 做唯讀檢查並回報。
+5. 依實測結果，由 Claude Code 在 `candidate/v1` 上修正問題。
+6. 之後依優先順序：P1b 最低視覺／UI 品質 → 音效、音樂、動畫整合 → 結算與重試流程 → 手機版面。
