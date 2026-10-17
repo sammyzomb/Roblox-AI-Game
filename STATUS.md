@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-10-17（Claude Code，更新角色分工文件）
+最後更新：2026-10-17（Claude Code，合併到 main、刪除舊摘要）
 
 ## 開發分工
 
@@ -12,11 +12,11 @@
 - **Grok：** 獨立審查與創意規劃（美術、動畫、音效、音樂），意見交給 Claude Code 評估。
 - **Product Owner：** 在 Roblox Studio 實測、決定驗收標準與優先順序，同意合併到 `main`。
 
-角色文件已同步更新：`README.md`、`docs/AI_RULES.md`、`docs/TEAM_ROLES.md`、`docs/TASKS.md`、`docs/AI_COORDINATION_PROTOCOL.md`、`docs/CREATIVE_TEAM.md`、`docs/ARCHITECTURE.md`。`docs/PROJECT_STATUS.md` 已停用，改指向本檔案。自動化工具說明（`docs/CLAUDE_AUTOMATION.md`、`docs/AI_DISPATCHER.md`、`docs/CLAUDE_DIAGNOSTIC_PROPOSAL.md`）仍描述舊的 Technical Lead 派工流程，尚未修改。
+角色文件已同步更新：`README.md`、`docs/AI_RULES.md`、`docs/TEAM_ROLES.md`、`docs/TASKS.md`、`docs/AI_COORDINATION_PROTOCOL.md`、`docs/CREATIVE_TEAM.md`、`docs/ARCHITECTURE.md`。舊的進度摘要 `docs/PROJECT_STATUS.md` 已刪除，進度一律以本檔案為準。自動化工具說明（`docs/CLAUDE_AUTOMATION.md`、`docs/AI_DISPATCHER.md`、`docs/CLAUDE_DIAGNOSTIC_PROPOSAL.md`）仍描述舊的 Technical Lead 派工流程，尚未修改。
 
 ## 目前候選分支
 
-`candidate/v1`，從 `main`（`116c3b0`）建立，合併了：
+`candidate/v1`，從 `main`（`116c3b0`）建立。2026-10-17 經 Product Owner 同意，透過 Pull Request 合併到 `main`。合併了：
 
 | 來源 | head | 內容 |
 |---|---|---|
@@ -85,7 +85,7 @@
 
 ## 下一步
 
-1. 在 Issue #3 通知 ChatGPT、Cursor、Grok 新的分工（尚未發出）。
+1. 在 Issue #3 與各角色 Issue 通知新分工，等待 ChatGPT、Cursor、Grok 各角色回報是否了解。
 2. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
 3. Product Owner 補上「驗收標準」段落。
 4. Cursor 對 `candidate/v1` 做唯讀檢查並回報。
