@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-10-17（Claude Code，新分工通知與回報）
+最後更新：2026-10-17（Claude Code，全部角色已回報了解新分工）
 
 ## 開發分工
 
@@ -77,7 +77,26 @@
 - **Collect 只是佔位動作**，場景中沒有對應的物件。
 - **訓練假人只在 Studio 出現**，正式伺服器不會生成。
 - 之前回報過 Rojo 重複 Connect 的狀況，原因未確認。
+- Cursor 的 GitHub 整合沒有 Issue 留言權限（`Resource not accessible by integration`），回報需由 Product Owner 或 Claude Code 代貼。
 - 專案中有許多舊的 draft PR 和分支（例如 #28–#36 的 `wip:` PR），內容已包含在 `candidate/v1` 中，尚未整理。
+
+## Cursor 唯讀檢查回報格式
+
+Cursor 在候選分支做完檢查後，用這個格式回報（貼在相關 Issue 或 PR；無法留言時交給 Product Owner 轉貼）：
+
+```
+[CHECK]
+候選分支與 commit SHA：candidate/v1 @ <完整 40 碼 SHA>
+執行的指令與結果：
+- luau tests/run.luau：<N> passed, <M> failed
+- rojo build default.project.json -o build.rbxlx：成功／失敗（附錯誤訊息）
+發現的問題（每項一行）：
+- [嚴重／一般／建議] 問題描述 — 檔案:行號 — 重現步驟或命令輸出
+與舊 PR（#43–#53）的關係：無／說明
+未檢查的範圍：
+```
+
+只回報離線檢查結果，不宣稱 Studio 實測通過或可玩。
 
 ## 驗收標準
 
@@ -85,10 +104,8 @@
 
 ## 下一步
 
-1. 新分工已在 Issue #3（總公告）、#42（Cursor）及各 Grok 角色 Issue 通知。回報狀況：
-   - 已回報「了解」：ChatGPT（#3）、Grok（#7）、美術企劃（#8）、美術監督（#9）、音效企劃（#10）、音樂企劃（#11）、動畫設計（#17）。
-   - 尚未回報：Cursor（#42）。沒有自動觸發，需要 Product Owner 開啟 Cursor 並請它回報。
-   - Grok 各角色指出：先前交付的規劃草稿（#9 美術審查指南、#10 SFX v0.2、PR #12 音樂計畫、PR #18 動畫方向）仍寫著交給 ChatGPT Technical Lead，之後修訂時要改成交給 Claude Code。
+1. 新分工通知已完成，所有角色都回報「了解」：ChatGPT（#3）、Cursor（#42，由 Claude Code 代貼）、Grok（#7）、美術企劃（#8）、美術監督（#9）、音效企劃（#10）、音樂企劃（#11）、動畫設計（#17）。
+   - 待修訂：先前交付的規劃草稿（#9 美術審查指南、#10 SFX v0.2、PR #12 音樂計畫、PR #18 動畫方向）仍寫著交給 ChatGPT Technical Lead，之後修訂時要改成交給 Claude Code。
 2. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
 3. Product Owner 補上「驗收標準」段落。
 4. Cursor 對 `candidate/v1` 做唯讀檢查並回報。
