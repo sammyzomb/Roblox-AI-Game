@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-10-17（Claude Code，合併到 main、刪除舊摘要）
+最後更新：2026-10-17（Claude Code，新分工通知與回報）
 
 ## 開發分工
 
@@ -85,7 +85,10 @@
 
 ## 下一步
 
-1. 在 Issue #3 與各角色 Issue 通知新分工，等待 ChatGPT、Cursor、Grok 各角色回報是否了解。
+1. 新分工已在 Issue #3（總公告）、#42（Cursor）及各 Grok 角色 Issue 通知。回報狀況：
+   - 已回報「了解」：Grok（#7）、美術企劃（#8）、美術監督（#9）、音效企劃（#10）、音樂企劃（#11）、動畫設計（#17）。
+   - 尚未回報：ChatGPT（#3）、Cursor（#42）。這兩者沒有自動觸發，需要 Product Owner 開啟它們並請它們回報。
+   - Grok 各角色指出：先前交付的規劃草稿（#9 美術審查指南、#10 SFX v0.2、PR #12 音樂計畫、PR #18 動畫方向）仍寫著交給 ChatGPT Technical Lead，之後修訂時要改成交給 Claude Code。
 2. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
 3. Product Owner 補上「驗收標準」段落。
 4. Cursor 對 `candidate/v1` 做唯讀檢查並回報。

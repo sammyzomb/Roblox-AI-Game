@@ -68,6 +68,7 @@ ROLE_MAP = {
 }
 
 PROJECT_DOCS = [
+    "STATUS.md",
     "README.md",
     "docs/AI_RULES.md",
     "docs/AI_COORDINATION_PROTOCOL.md",

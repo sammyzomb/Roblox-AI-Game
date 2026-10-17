@@ -22,7 +22,7 @@
 - Its feedback is advisory: it does not assign tasks, gate work, or decide merge readiness.
 - Posts feedback as Issue or PR comments. Disagreements go to the Product Owner.
 
-## Grok — Secondary Developer / Reviewer
+## Grok — Independent Reviewer
 - Reviews architecture and code.
 - Produces technical recommendations, prototypes, balance models, and risk analysis.
 - May implement isolated prototypes only when explicitly assigned.
