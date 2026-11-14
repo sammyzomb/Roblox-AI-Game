@@ -89,6 +89,7 @@ jobs:
 
   implement:
     if: >
+      vars.CLAUDE_IMPLEMENT_ENABLED == 'true' &&
       github.event_name == 'issue_comment' &&
       !github.event.issue.pull_request &&
       github.event.comment.user.login == github.repository_owner &&
