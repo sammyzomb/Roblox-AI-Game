@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-10-17（Claude Code，全部角色已回報了解新分工）
+最後更新：2026-11-19（Claude Code，合併 PR #61 付費派工開關）
 
 ## 開發分工
 
@@ -103,6 +103,9 @@ Cursor 在候選分支做完檢查後，用這個格式回報（貼在相關 Iss
 （Product Owner 之後補）
 
 ## 下一步
+
+0. 2026-11-19：經 Product Owner 同意合併 PR #61（Refs #60）。自動呼叫 Claude 寫程式的 `implement` 流程現在需要 repository variable `CLAUDE_IMPLEMENT_ENABLED` 設為 `true` 才會啟動，沒設定就是關閉。說明見 `docs/CLAUDE_COST_AND_APPROVAL.md`。合併前離線測試 47 項通過。尚未有金額上限機制；`dispatch`（唯讀分析）仍會產生 API 費用，不受這個開關控制。
+   - 待 Product Owner 確認：Issue #60 提到「ChatGPT 單一對口」的新分工想法，與 2026-10-17 的分工（ChatGPT 僅顧問）不同，尚未決定，文件維持 10/17 版本。
 
 1. 新分工通知已完成，所有角色都回報「了解」：ChatGPT（#3）、Cursor（#42，由 Claude Code 代貼）、Grok（#7）、美術企劃（#8）、美術監督（#9）、音效企劃（#10）、音樂企劃（#11）、動畫設計（#17）。
    - 待修訂：先前交付的規劃草稿（#9 美術審查指南、#10 SFX v0.2、PR #12 音樂計畫、PR #18 動畫方向）仍寫著交給 ChatGPT Technical Lead，之後修訂時要改成交給 Claude Code。
