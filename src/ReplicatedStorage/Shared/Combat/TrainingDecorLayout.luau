@@ -38,7 +38,9 @@ TrainingDecorLayout.PassiveDummies = {
 TrainingDecorLayout.LanternSpacing = 20
 TrainingDecorLayout.LanternSideGap = 2
 TrainingDecorLayout.GateHeight = 12
-TrainingDecorLayout.SignHeight = 9
+-- Area signs float well above head and name-tag height so they never cover
+-- the character or a dummy's own name when the camera is close.
+TrainingDecorLayout.SignHeight = 16
 TrainingDecorLayout.PassivePadRadius = 4
 
 local function walkwayBounds(points: any): (number, number, number)
@@ -124,7 +126,7 @@ function TrainingDecorLayout.signs(): { Sign }
 			Id = "Guide",
 			Title = "訓練場 ▶",
 			Body = "沿著石板路直走",
-			Position = { X = minX + 22, Y = signY - 2, Z = points.WalkwayCenter.Z + halfZ + 4 },
+			Position = { X = minX + 22, Y = 8, Z = points.WalkwayCenter.Z + halfZ + 4 },
 			Tone = "Neutral",
 		},
 		{
@@ -145,14 +147,14 @@ function TrainingDecorLayout.signs(): { Sign }
 			Id = "Passive",
 			Title = "練習木人",
 			Body = "不會還手，左鍵攻擊",
-			Position = { X = passive.X, Y = signY + 2, Z = passive.Z },
+			Position = { X = passive.X, Y = signY, Z = passive.Z },
 			Tone = "Calm",
 		},
 		{
 			Id = "BlockPractice",
 			Title = "格擋練習",
 			Body = "訓練中站進紅圈會被攻擊，按住 F 格擋",
-			Position = { X = points.DummyMarker.X, Y = signY + 2, Z = points.DummyMarker.Z },
+			Position = { X = points.DummyMarker.X, Y = signY, Z = points.DummyMarker.Z },
 			Tone = "Danger",
 		},
 	}

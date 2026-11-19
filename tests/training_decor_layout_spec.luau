@@ -62,11 +62,13 @@ return function(test: (string, () -> ()) -> (), eq: (any, any, string?) -> ())
 			eq(byId[sign.Id], nil, "unique id")
 			byId[sign.Id] = sign
 			eq(#sign.Title > 0 and #sign.Body > 0, true, "has text")
-			eq(sign.Position.Y > 5, true, "above head height")
+			eq(sign.Position.Y > 7, true, "above head height")
 		end
 		for _, id in { "Guide", "Entrance", "Exit", "Passive", "BlockPractice" } do
 			eq(byId[id] ~= nil, true, id)
 		end
+		eq(byId.Passive.Position.Y >= 14, true, "area sign clears dummy name tags")
+		eq(byId.BlockPractice.Position.Y >= 14, true, "area sign clears dummy name tags")
 		eq(byId.Entrance.Position.X, points.Entrance.X)
 		eq(byId.Exit.Position.X, points.Exit.X)
 		eq(byId.BlockPractice.Position.Z, points.DummyMarker.Z)

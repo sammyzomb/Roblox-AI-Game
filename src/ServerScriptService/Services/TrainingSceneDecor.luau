@@ -151,7 +151,7 @@ local function buildSign(parent: Instance, sign: TrainingDecorLayout.Sign)
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "Sign"
-	billboard.Size = UDim2.fromScale(16, 4.6)
+	billboard.Size = UDim2.fromScale(10, 2.9)
 	billboard.MaxDistance = 220
 	billboard.LightInfluence = 0
 	billboard.Adornee = anchor
@@ -159,14 +159,14 @@ local function buildSign(parent: Instance, sign: TrainingDecorLayout.Sign)
 	local panel = Instance.new("Frame")
 	panel.Size = UDim2.fromScale(1, 1)
 	panel.BackgroundColor3 = PANEL
-	panel.BackgroundTransparency = 0.2
+	panel.BackgroundTransparency = 0.4
 	panel.Parent = billboard
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0.18, 0)
 	corner.Parent = panel
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = tone(sign.Tone)
-	stroke.Thickness = 3
+	stroke.Thickness = 2
 	stroke.Parent = panel
 
 	local title = Instance.new("TextLabel")
