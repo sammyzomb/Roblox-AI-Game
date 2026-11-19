@@ -9,8 +9,8 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local BARS = {
-	{ Pool = "Stamina", Color = Color3.fromRGB(235, 190, 60) },
-	{ Pool = "Mana", Color = Color3.fromRGB(80, 140, 255) },
+	{ Pool = "Stamina", Label = "體力", Color = Color3.fromRGB(235, 190, 60) },
+	{ Pool = "Mana", Label = "魔力", Color = Color3.fromRGB(80, 140, 255) },
 }
 
 local gui = Instance.new("ScreenGui")
@@ -21,7 +21,7 @@ gui.Parent = playerGui
 local holder = Instance.new("Frame")
 holder.AnchorPoint = Vector2.new(0.5, 1)
 holder.Position = UDim2.new(0.5, 0, 1, -90)
-holder.Size = UDim2.new(0, 240, 0, 34)
+holder.Size = UDim2.new(0, 240, 0, 40)
 holder.BackgroundTransparency = 1
 holder.Parent = gui
 
@@ -33,7 +33,7 @@ local fills: { [string]: Frame } = {}
 for i, bar in BARS do
 	local back = Instance.new("Frame")
 	back.LayoutOrder = i
-	back.Size = UDim2.new(1, 0, 0, 12)
+	back.Size = UDim2.new(1, 0, 0, 15)
 	back.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
 	back.BackgroundTransparency = 0.2
 	back.Parent = holder
@@ -45,6 +45,18 @@ for i, bar in BARS do
 	fill.Parent = back
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
 	fills[bar.Pool] = fill
+
+	local caption = Instance.new("TextLabel")
+	caption.Size = UDim2.new(1, -8, 1, 0)
+	caption.Position = UDim2.new(0, 6, 0, 0)
+	caption.BackgroundTransparency = 1
+	caption.Font = Enum.Font.GothamBold
+	caption.TextSize = 11
+	caption.TextColor3 = Color3.fromRGB(20, 22, 28)
+	caption.TextXAlignment = Enum.TextXAlignment.Left
+	caption.ZIndex = 2
+	caption.Text = bar.Label
+	caption.Parent = back
 end
 
 local barrierLabel = Instance.new("TextLabel")
@@ -73,7 +85,7 @@ local function watch(character: Model)
 			end
 		end
 		local barrier = character:GetAttribute("Barrier")
-		barrierLabel.Text = if type(barrier) == "number" and barrier > 0 then `Barrier {barrier}` else ""
+		barrierLabel.Text = if type(barrier) == "number" and barrier > 0 then `護盾 {barrier}` else ""
 	end
 	table.insert(connections, character.AttributeChanged:Connect(refresh))
 	refresh()

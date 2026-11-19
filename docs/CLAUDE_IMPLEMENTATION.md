@@ -28,7 +28,7 @@ This document explains how to set up, run and extend the Roblox project foundati
 Expected:
 
 - Output shows `[Server] booted 4 module(s)`, `[Combat] Studio training dummies spawned` and `[Client] booted 2 module(s)`.
-- A HUD at the top shows `Coins: 0    Level 1` and an xp bar.
+- A HUD at the top shows `金幣 0　　等級 1` and an xp bar.
 - Press **E** (keyboard), **X** (gamepad) or the on-screen **Collect** button (touch / mobile emulator) → coins +1, xp bar fills, level goes up.
 
 DataStores: in an unpublished place, or with *Game Settings → Security → Enable Studio Access to API Services* off, the Output shows

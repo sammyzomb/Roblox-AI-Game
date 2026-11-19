@@ -69,8 +69,42 @@ local practiceState: TrainingAttacker.State = TrainingAttacker.initial(0)
 local practiceModel: Model? = nil
 local practiceConnected = false
 
+-- Presentation only: passive targets look like straw-and-wood dummies, the
+-- practice attacker is dark metal with a red torso, and each shows a
+-- Traditional Chinese name and its health bar. Model.Name is unchanged.
+local PASSIVE_BODY = Color3.fromRGB(214, 180, 110)
+local ATTACKER_BODY = Color3.fromRGB(72, 74, 84)
+local ATTACKER_TORSO = Color3.fromRGB(170, 56, 48)
+
+local function dummyDescription(spec: DummySpec): HumanoidDescription
+	local description = Instance.new("HumanoidDescription")
+	local attacker = spec.PracticeAttacker == true
+	local body = if attacker then ATTACKER_BODY else PASSIVE_BODY
+	description.HeadColor = body
+	description.LeftArmColor = body
+	description.RightArmColor = body
+	description.LeftLegColor = body
+	description.RightLegColor = body
+	description.TorsoColor = if attacker then ATTACKER_TORSO else body
+	return description
+end
+
+local function dressDummy(model: Model, humanoid: Humanoid, spec: DummySpec)
+	local attacker = spec.PracticeAttacker == true
+	local material = if attacker then Enum.Material.Metal else Enum.Material.Wood
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") and descendant.Name ~= "HumanoidRootPart" then
+			descendant.Material = material
+		end
+	end
+	humanoid.DisplayName = if attacker then "格擋教練" else `練習木人 Lv.{spec.Level}`
+	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+	humanoid.NameDisplayDistance = 80
+	humanoid.HealthDisplayDistance = 80
+end
+
 local function spawnDummy(spec: DummySpec)
-	local model = Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+	local model = Players:CreateHumanoidModelFromDescription(dummyDescription(spec), Enum.HumanoidRigType.R15)
 	model.Name = `TrainingDummy_L{spec.Level}`
 	model:PivotTo(CFrame.new(spec.Position) * CFrame.Angles(0, math.pi, 0))
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
@@ -84,6 +118,11 @@ local function spawnDummy(spec: DummySpec)
 	end
 	model:SetAttribute("Level", spec.Level)
 	model:SetAttribute("Weapon", spec.Weapon)
+	-- Looks are optional: a failure here must not stop the dummy spawning.
+	local dressed, why = pcall(dressDummy, model, humanoid, spec)
+	if not dressed then
+		warn(`[Combat] Training dummy appearance skipped: {why}`)
+	end
 	model.Parent = Workspace
 	CollectionService:AddTag(model, "CombatNPC")
 	return model

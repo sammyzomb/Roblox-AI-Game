@@ -1,5 +1,43 @@
 # Training Ground Smoke Test (Task #23, Increment A + correction pass)
 
+## Minimum visual pass (P1b, presentation only)
+
+`TrainingSceneDecor` builds a separate `Workspace.TrainingGroundDecor`
+folder: lantern posts beside the walkway, arches and signs over the
+entrance and exit pads, a red ground ring at the block-practice range
+(`TrainingAttacker.DEVELOPMENT_PRACTICE_RANGE`), a ring under each passive
+dummy, and Traditional Chinese signs. Every decoration part has
+`CanCollide`, `CanTouch` and `CanQuery` off. `TrainingGroundScene` still
+holds exactly its six owned children. The walkway, platform and pads now
+use Cobblestone, Sand and Neon. Dummies have a colour, a material, a
+Chinese display name and an always-on health bar. The HUD text is
+Traditional Chinese. Lighting is set to late afternoon with a light haze.
+The server now boots 7 modules.
+
+Pure tests (`tests/training_decor_layout_spec.luau`) cover positions only.
+
+### Studio steps (NOT YET RUN)
+
+1. Start Play Solo. Output shows `[Server] booted 7 module(s)` and
+   `[Combat] Training decor built "TrainingGroundDecor"`, with no
+   `Training decor skipped` or `appearance skipped` warning.
+2. From spawn, the 「訓練場 ▶」 sign and the lantern-lined stone path are
+   visible. Walk the path with no jump; lanterns, pillars and signs never
+   block the character.
+3. The entrance arch reads 「訓練場入口」 and the exit arch 「出口」. Walking
+   under each arch onto its pad still enters and exits training.
+4. The three spawn-side dummies are straw-coloured, named 「練習木人 Lv.N」,
+   and show a health bar. The scene dummy is dark with a red torso, named
+   「格擋教練」, and stands inside a red ring.
+5. While training, stepping inside the red ring starts the timed swings;
+   stepping outside stops new swings. Attacks and the rifle still hit
+   dummies through the rings and signs.
+6. The top HUD reads 「金幣 N　　等級 N」; the bars read 「體力」 and 「魔力」.
+7. Stop and restart Play: `TrainingGroundDecor` is rebuilt once, not
+   duplicated.
+
+Status: **NOT YET RUN IN STUDIO.**
+
 ## Scene dummy block practice
 
 Studio only. The dummy standing on `TrainingDummyMarker` is the only

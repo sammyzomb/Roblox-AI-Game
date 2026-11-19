@@ -31,6 +31,7 @@ local panel = make("Frame", {
 	BackgroundTransparency = 0.25,
 }, gui)
 make("UICorner", { CornerRadius = UDim.new(0, 10) }, panel)
+make("UIStroke", { Color = Color3.fromRGB(246, 196, 72), Thickness = 1.5, Transparency = 0.35 }, panel)
 make("UIPadding", {
 	PaddingTop = UDim.new(0, 8),
 	PaddingBottom = UDim.new(0, 8),
@@ -66,16 +67,16 @@ local xpFill = make("Frame", {
 make("UICorner", { CornerRadius = UDim.new(1, 0) }, xpFill)
 local hintLabel = label(3, 14)
 hintLabel.TextColor3 = Color3.fromRGB(190, 195, 205)
-hintLabel.Text = if UserInputService.TouchEnabled then "Tap Collect to earn coins" else "Press E to collect"
+hintLabel.Text = if UserInputService.TouchEnabled then "點「Collect」收集金幣" else "按 E 收集金幣"
 
-statsLabel.Text = "Loading..."
+statsLabel.Text = "載入中…"
 gui.Parent = playerGui
 
 local function render(state: ClientState?)
 	if state == nil then
 		return
 	end
-	statsLabel.Text = `Coins: {state.Coins}    Level {state.Level}`
+	statsLabel.Text = `金幣 {state.Coins}　　等級 {state.Level}`
 	local ratio = if state.XpToNext > 0 then math.clamp(state.Xp / state.XpToNext, 0, 1) else 1
 	xpFill.Size = UDim2.new(ratio, 0, 1, 0)
 end

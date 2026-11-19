@@ -1,6 +1,6 @@
 # 專案進度 STATUS
 
-最後更新：2026-11-19（Claude Code，合併 PR #61 付費派工開關）
+最後更新：2026-11-19（Claude Code，P1b 最低畫面改善第一版）
 
 ## 開發分工
 
@@ -36,7 +36,7 @@
 
 **基礎架構**
 - Rojo 專案設定（`default.project.json`、`rokit.toml` 固定 Rojo 7.7.0 / Luau 0.740.0）。
-- 服務載入器：伺服器 6 個 Services、客戶端 2 個 Controllers，依 Priority → Init → Start 啟動。
+- 服務載入器：伺服器 7 個 Services、客戶端 2 個 Controllers，依 Priority → Init → Start 啟動。
 - 玩家資料：載入、定時自動存檔、離開時存檔、v1→v2 資料遷移；Studio 未開 API 時自動改用記憶體存檔。
 - 佔位遊戲循環：按 E（手把 X、觸控按鈕）Collect，得到金幣與 XP、會升級；頂部 HUD 顯示金幣、等級、XP 條。
 
@@ -59,6 +59,14 @@
 - 訓練藥水：每次訓練 2 瓶，只存在記憶體，不扣正式庫存。
 - 訓練中禁止改動正式裝備與消耗品。
 
+**畫面（P1b 第一版，2026-11-19，只在 `candidate/v1`，尚未合併到 main）**
+- 訓練場佈景（獨立的 `TrainingGroundDecor` 資料夾，全部不可碰撞、不影響戰鬥判定）：石板路兩側燈籠、入口與出口拱門、繁體中文標示牌、格擋練習紅圈（半徑等於假人攻擊範圍）、木人腳下的圈。
+- 地面材質：石板路、沙地平台、發光的入口／出口／返回點。
+- 假人外觀：木人為稻草色木質、格擋教練為深色金屬紅上身；顯示中文名稱與血條。
+- HUD 改為繁體中文（金幣、等級、體力、魔力、護盾）。
+- 傍晚光線與薄霧。
+- 離線驗證：`luau tests/run.luau` 172 passed、46 個腳本可編譯、`rojo build` 成功、Python 47 tests OK。Studio 尚未實測。
+
 **防護（Issue #20 的一部分）**
 - 請求頻率限制、冷卻時間檢查。
 - 沒有玩家資料時拒絕換裝（PR #55）。
@@ -66,7 +74,7 @@
 ## 已知問題與待修項目
 
 - **還沒在 Studio 實測**：`candidate/v1`、PR #53、PR #55 都還沒有 Studio 測試紀錄。Product Owner 10/8 測過較早的版本（`8ea0d78`），判定不能算可玩。
-- **畫面太簡陋**：場景、角色、介面都是佔位方塊（P1b 最低視覺／UI 品質尚未開始）。
+- **畫面仍是程式拼出的方塊造型**：P1b 第一版已加上佈景、材質、標示和中文介面，但沒有真正的 3D 模型、貼圖、動畫，實際觀感待 Product Owner 在 Studio 確認。
 - **沒有音效、背景音樂、動畫整合**：#10、#11、#17 只交付了規劃文件。
 - **沒有結算畫面**：訓練完成後沒有結果、重試、退出流程。
 - **手機版面未驗證**：選單是否遮擋 HUD 或觸控按鈕、安全區是否正確都還沒測。
@@ -109,7 +117,7 @@ Cursor 在候選分支做完檢查後，用這個格式回報（貼在相關 Iss
 
 1. 新分工通知已完成，所有角色都回報「了解」：ChatGPT（#3）、Cursor（#42，由 Claude Code 代貼）、Grok（#7）、美術企劃（#8）、美術監督（#9）、音效企劃（#10）、音樂企劃（#11）、動畫設計（#17）。
    - 待修訂：先前交付的規劃草稿（#9 美術審查指南、#10 SFX v0.2、PR #12 音樂計畫、PR #18 動畫方向）仍寫著交給 ChatGPT Technical Lead，之後修訂時要改成交給 Claude Code。
-2. Product Owner 在 Studio 實測 `candidate/v1`：攻擊、防禦、死亡重生、操作手感。
+2. Product Owner 在 Studio 實測 `candidate/v1`：畫面第一版的觀感，以及攻擊、防禦、死亡重生、操作手感。步驟見 `docs/TRAINING_SMOKE_TEST.md` 開頭的「Minimum visual pass」。
 3. Product Owner 補上「驗收標準」段落。
 4. Cursor 對 `candidate/v1` 做唯讀檢查並回報。
 5. 依實測結果，由 Claude Code 在 `candidate/v1` 上修正問題。

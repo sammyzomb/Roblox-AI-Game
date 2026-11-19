@@ -144,6 +144,10 @@ require("./training_supplies_spec")(test, eq)
 -- No Roblox instances.
 require("./training_attacker_spec")(test, eq)
 
+-- Training ground decorations (P1b minimum visual pass). Pure layout only:
+-- positions relative to the scene config and the attacker range.
+require("./training_decor_layout_spec")(test, eq)
+
 print(`{passed} passed, {failed} failed`)
 if failed > 0 then
 	error("tests failed")

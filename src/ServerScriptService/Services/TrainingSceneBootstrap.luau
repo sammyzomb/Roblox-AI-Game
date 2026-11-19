@@ -86,6 +86,7 @@ type ChildSpec = {
 	CanCollide: boolean,
 	CanTouch: boolean,
 	Transparency: number,
+	Material: Enum.Material?, -- presentation only; defaults to SmoothPlastic
 	Tag: string?, -- scene role this part must carry; nil strips all three roles
 	Attributes: { [string]: any }?,
 }
@@ -113,7 +114,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 				points.WalkwayCenter.Z
 			),
 			Size = walkwaySize,
-			Color = Color3.fromRGB(110, 110, 110),
+			Color = Color3.fromRGB(150, 144, 132),
+			Material = Enum.Material.Cobblestone,
 			CanCollide = true,
 			CanTouch = true,
 			Transparency = 0,
@@ -126,7 +128,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 				points.Origin.Z
 			),
 			Size = platformSize,
-			Color = Color3.fromRGB(120, 120, 130),
+			Color = Color3.fromRGB(196, 172, 128),
+			Material = Enum.Material.Sand,
 			CanCollide = true,
 			CanTouch = true,
 			Transparency = 0,
@@ -135,7 +138,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Name = "TrainingEntrancePad",
 			Position = rolePosition(points.Entrance),
 			Size = roleSize,
-			Color = Color3.fromRGB(70, 170, 90),
+			Color = Color3.fromRGB(88, 200, 120),
+			Material = Enum.Material.Neon,
 			CanCollide = roleVolume.canCollide,
 			CanTouch = roleVolume.canTouch,
 			Transparency = roleVolume.transparency,
@@ -145,7 +149,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Name = "TrainingExitPad",
 			Position = rolePosition(points.Exit),
 			Size = roleSize,
-			Color = Color3.fromRGB(170, 90, 70),
+			Color = Color3.fromRGB(226, 110, 86),
+			Material = Enum.Material.Neon,
 			CanCollide = roleVolume.canCollide,
 			CanTouch = roleVolume.canTouch,
 			Transparency = roleVolume.transparency,
@@ -155,7 +160,8 @@ local function buildChildSpecs(points: any): { ChildSpec }
 			Name = "TrainingReturnSpawnPad",
 			Position = rolePosition(points.ReturnSpawn),
 			Size = roleSize,
-			Color = Color3.fromRGB(90, 120, 170),
+			Color = Color3.fromRGB(96, 150, 226),
+			Material = Enum.Material.Neon,
 			CanCollide = roleVolume.canCollide,
 			CanTouch = roleVolume.canTouch,
 			Transparency = roleVolume.transparency,
@@ -213,7 +219,7 @@ local function applyPartSettings(part: BasePart, spec: ChildSpec)
 	part.Size = spec.Size
 	part.Position = spec.Position
 	part.Color = spec.Color
-	part.Material = Enum.Material.SmoothPlastic
+	part.Material = spec.Material or Enum.Material.SmoothPlastic
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	part:SetAttribute("TrainingSceneOwned", true)
